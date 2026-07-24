@@ -420,6 +420,10 @@ def start_scheduler():
     scheduler.add_job(run_pdufa_pipeline, "date", run_date=datetime.datetime.utcnow() + datetime.timedelta(seconds=35), id="pdufa_pipeline_initial", replace_existing=True)
     scheduler.add_job(_run_ct, "date", run_date=datetime.datetime.utcnow() + datetime.timedelta(seconds=30), id="clinical_trials_pipeline_initial", replace_existing=True)
 
+    # ── SEC general filings feed (30 min) ──
+    from scrapers.sec_filings import run_sec_feed
+    scheduler.add_job(run_sec_feed, "interval", minutes=30, id="sec_feed", replace_existing=True)
+
     # ── Daily briefings ──
     from app.services.notifier import send_morning_briefing, send_evening_briefing
     if settings.discord_webhook_briefing:
