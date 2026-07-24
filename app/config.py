@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     alert_days_before: int = 7
     refresh_interval_hours: int = 6
     base_url: str = "http://localhost:8000"
+    timezone: str = "America/New_York"  # US East Coast market time
 
     class Config:
         env_file = ".env"

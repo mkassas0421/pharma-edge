@@ -14,6 +14,7 @@ import re
 import httpx
 
 from app.models.database import SessionLocal, Ticker, CatalystEvent
+from app.config import settings
 from scrapers.company_map import search_terms, matches_ticker
 
 logger = logging.getLogger(__name__)
@@ -241,7 +242,11 @@ def run_pipeline():
         total_upd = 0
         changes = []  # collect (ticker, company, drug, change_desc, nct_id)
 
-        for t in tickers:
+        import time
+        for i, t in enumerate(tickers):
+            # Rate-limit: 1 second between tickers to avoid CT.gov rate limiting
+            if i > 0:
+                time.sleep(1.0)
             candidates = _scrape_company(t.ticker, t.id)
             for ev_data in candidates:
                 existing = db.query(CatalystEvent).filter(

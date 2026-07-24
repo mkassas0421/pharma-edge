@@ -50,8 +50,23 @@ _HIGH_IMPACT_KEYWORDS = [
     "biologics license", "supplement", "label expansion",
 ]
 
-# Cache of seen accession numbers to avoid re-sending duplicates
-_seen_filings: set[str] = set()
+# Cache of seen accession numbers to avoid re-sending duplicates.
+# Limited to 5000 entries (LRU-eviction via ordering) to bound memory.
+_seen_filings: list[str] = []
+_MAX_SEEN_FILINGS = 5000
+
+
+def _mark_seen(accession: str) -> None:
+    """Record an accession number and evict oldest if over capacity."""
+    if accession in _seen_filings:
+        return
+    _seen_filings.append(accession)
+    while len(_seen_filings) > _MAX_SEEN_FILINGS:
+        _seen_filings.pop(0)
+
+
+def _is_seen(accession: str) -> bool:
+    return accession in _seen_filings
 
 
 def _fetch_feed(form: str) -> list[dict]:
@@ -154,12 +169,12 @@ def run_sec_feed():
                 time.sleep(_SEC_FEED_DELAY)
             entries = _fetch_feed(form)
             for entry in entries:
-                if entry["accession"] and entry["accession"] in _seen_filings:
+                if entry["accession"] and _is_seen(entry["accession"]):
                     continue
 
                 # Mark as seen regardless so we don't reprocess
                 if entry["accession"]:
-                    _seen_filings.add(entry["accession"])
+                    _mark_seen(entry["accession"])
 
                 # 1. Try direct ticker match from feed
                 ticker_match = None

@@ -10,7 +10,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.models.database import get_db, Ticker, TickerAlias, CatalystEvent
+from app.models.database import get_db, Ticker, TickerAlias, CatalystEvent, PriceSnapshot
 from app.models.schemas import TickerCreate, TickerResponse
 from scrapers.clinical_trials import _scrape_company
 
@@ -58,5 +58,11 @@ def delete_ticker(ticker: str, db: Session = Depends(get_db)):
     obj = db.query(Ticker).filter(Ticker.ticker == ticker.upper()).first()
     if not obj:
         raise HTTPException(status_code=404, detail="Ticker not found")
+
+    # Cascade-delete dependent rows (no FK constraints defined, so manual cleanup)
+    db.query(CatalystEvent).filter(CatalystEvent.ticker == ticker.upper()).delete()
+    db.query(PriceSnapshot).filter(PriceSnapshot.ticker == ticker.upper()).delete()
+    db.query(TickerAlias).filter(TickerAlias.ticker_id == obj.id).delete()
+
     db.delete(obj)
     db.commit()

@@ -15,11 +15,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Expose the port Render provides via $PORT
+# Expose the port (defaults to 8000, overridden by $PORT on Render)
 EXPOSE 8000
 
 # ── Startup ──────────────────────────────────────────────────────────────
-# uvicorn serves the FastAPI app (single worker, enough for MVP).
-# The background scheduler (APScheduler) runs in the same process via
-# the FastAPI lifespan hook — no Celery needed.
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Shell form so $PORT is expanded at runtime (Render injects this env var).
+# Falls back to 8000 for local Docker runs where $PORT might not be set.
+CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}

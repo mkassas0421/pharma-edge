@@ -431,9 +431,14 @@ def start_scheduler():
     # ── Daily briefings ──
     from app.services.notifier import send_morning_briefing, send_evening_briefing
     if settings.discord_webhook_briefing:
-        scheduler.add_job(send_morning_briefing, "cron", hour=8, minute=30, id="morning_briefing", replace_existing=True)
-        scheduler.add_job(send_evening_briefing, "cron", hour=21, minute=0, id="evening_briefing", replace_existing=True)
-        logger.info("Daily briefings scheduled (08:30 / 21:00 UTC).")
+        try:
+            import pytz  # type: ignore
+            tz = pytz.timezone(settings.timezone)
+        except Exception:
+            tz = None
+        scheduler.add_job(send_morning_briefing, "cron", hour=8, minute=30, timezone=tz, id="morning_briefing", replace_existing=True)
+        scheduler.add_job(send_evening_briefing, "cron", hour=21, minute=0, timezone=tz, id="evening_briefing", replace_existing=True)
+        logger.info("Daily briefings scheduled (08:30 / 21:00 %s).", settings.timezone if tz else "UTC")
 
     scheduler.start()
     logger.info("Scheduler started — prices 5m, alerts %dh, briefings daily.", settings.refresh_interval_hours)

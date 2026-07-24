@@ -244,114 +244,6 @@
   <!-- MODALS                                                -->
   <!-- ════════════════════════════════════════════════════════ -->
 
-  <!-- ── Add Ticker Modal ── -->
-  <div id="add-ticker-modal" class="fixed inset-0 z-[60] hidden items-center justify-center bg-black/60 backdrop-blur-sm">
-    <div class="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md mx-4 p-6 shadow-2xl">
-      <div class="flex items-center justify-between mb-5">
-        <h3 class="text-lg font-semibold">Add Ticker</h3>
-        <button onclick="closeModal('add-ticker-modal')" class="text-gray-500 hover:text-white transition-colors"><i class="fa-solid fa-xmark text-xl"></i></button>
-      </div>
-      <form id="add-ticker-form" class="space-y-4" onsubmit="submitTicker(event)">
-        <div>
-          <label class="block text-sm text-gray-400 mb-1">Ticker Symbol</label>
-          <input name="ticker" required maxlength="10" placeholder="e.g. SNY" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-emerald-500 uppercase">
-        </div>
-        <div>
-          <label class="block text-sm text-gray-400 mb-1">Company Name</label>
-          <input name="company_name" required maxlength="200" placeholder="e.g. Sanofi S.A." class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-emerald-500">
-        </div>
-        <div>
-          <label class="block text-sm text-gray-400 mb-1">Sector</label>
-          <select name="sector" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-emerald-500">
-            <option>Large-cap Biotech</option>
-            <option>Mid-cap Biotech</option>
-            <option>Micro-cap Pharma</option>
-            <option>Pharma Services</option>
-          </select>
-        </div>
-        <div>
-          <label class="block text-sm text-gray-400 mb-1">Notes <span class="text-gray-600">(optional)</span></label>
-          <input name="notes" placeholder="Why you're tracking this..." class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-emerald-500">
-        </div>
-        <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg py-2.5 text-sm font-medium transition-colors">
-          <i class="fa-solid fa-plus mr-1"></i>Add Ticker
-        </button>
-      </form>
-    </div>
-  </div>
-
-  <!-- ── Add Event Modal ── -->
-  <div id="add-event-modal" class="fixed inset-0 z-[60] hidden items-center justify-center bg-black/60 backdrop-blur-sm">
-    <div class="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-lg mx-4 p-6 shadow-2xl">
-      <div class="flex items-center justify-between mb-5">
-        <h3 class="text-lg font-semibold">Add Catalyst Event</h3>
-        <button onclick="closeModal('add-event-modal')" class="text-gray-500 hover:text-white transition-colors"><i class="fa-solid fa-xmark text-xl"></i></button>
-      </div>
-      <form id="add-event-form" class="space-y-4" onsubmit="submitEvent(event)">
-        <div class="grid grid-cols-2 gap-4">
-          <div>
-            <label class="block text-sm text-gray-400 mb-1">Ticker</label>
-            <select name="ticker" id="event-ticker-select" required class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-emerald-500"></select>
-          </div>
-          <div>
-            <label class="block text-sm text-gray-400 mb-1">Event Type</label>
-            <select name="event_type" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-emerald-500">
-              <option value="PDUFA">PDUFA (FDA Decision)</option>
-              <option value="PHASE3_READOUT">Phase 3 Readout</option>
-              <option value="PHASE2_READOUT">Phase 2 Readout</option>
-              <option value="PHASE1_READOUT">Phase 1 Readout</option>
-              <option value="REGULATORY">Regulatory Filing</option>
-            </select>
-          </div>
-        </div>
-        <div>
-          <label class="block text-sm text-gray-400 mb-1">Event Title</label>
-          <input name="title" required maxlength="300" placeholder="e.g. PDUFA date for Alzheimer's drug" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-emerald-500">
-        </div>
-        <div class="grid grid-cols-2 gap-4">
-          <div>
-            <label class="block text-sm text-gray-400 mb-1">Event Date</label>
-            <input name="event_date" type="date" required class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-emerald-500">
-          </div>
-          <div>
-            <label class="block text-sm text-gray-400 mb-1">Impact Level</label>
-            <select name="impact_level" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-emerald-500">
-              <option value="High">High</option>
-              <option value="Medium">Medium</option>
-              <option value="Low">Low</option>
-            </select>
-          </div>
-        </div>
-        <div>
-          <label class="block text-sm text-gray-400 mb-1">Description <span class="text-gray-600">(optional)</span></label>
-          <textarea name="description" rows="2" placeholder="Details about this catalyst..." class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-emerald-500 resize-none"></textarea>
-        </div>
-        <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg py-2.5 text-sm font-medium transition-colors">
-          <i class="fa-solid fa-plus mr-1"></i>Add Event
-        </button>
-      </form>
-    </div>
-  </div>
-
-  <!-- ── Delete Confirm Modal ── -->
-  <div id="delete-modal" class="fixed inset-0 z-[60] hidden items-center justify-center bg-black/60 backdrop-blur-sm">
-    <div class="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-sm mx-4 p-6 shadow-2xl text-center">
-      <div class="w-14 h-14 mx-auto mb-4 rounded-full bg-rose-500/10 text-rose-400 flex items-center justify-center text-2xl">
-        <i class="fa-solid fa-trash-can"></i>
-      </div>
-      <h3 class="text-lg font-semibold mb-2">Delete Ticker?</h3>
-      <p class="text-sm text-gray-400 mb-6">
-        This will remove <span id="delete-ticker-name" class="text-white font-mono"></span> and all its events.
-      </p>
-      <div class="flex gap-3">
-        <button onclick="closeModal('delete-modal')" class="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-2.5 text-sm transition-colors">Cancel</button>
-        <button id="delete-confirm-btn" class="flex-1 bg-rose-600 hover:bg-rose-500 text-white rounded-lg py-2.5 text-sm transition-colors">
-          <i class="fa-solid fa-trash-can mr-1"></i>Delete
-        </button>
-      </div>
-    </div>
-  </div>
-
   <!-- ── Event Detail Modal ── -->
   <div id="event-detail-modal" class="fixed inset-0 z-[60] hidden items-center justify-center bg-black/70 backdrop-blur-sm" onclick="if(event.target===this)closeModal('event-detail-modal')">
     <div class="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-2xl mx-4 max-h-[85vh] overflow-y-auto shadow-2xl">
@@ -421,7 +313,13 @@
     let tickerList = [];
     let sortKey = null;
     let sortAsc = true;
-    let deleteTarget = null;
+    // ── Security ──
+    function escapeHtml(str) {
+      if (!str) return '';
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
 
     // ── Toast ──
     function showToast(message, type = 'success') {
@@ -438,18 +336,6 @@
     // ── Modals ──
     function openModal(id) { document.getElementById(id).classList.remove('hidden'); document.getElementById(id).classList.add('flex'); }
     function closeModal(id) { document.getElementById(id).classList.add('hidden'); document.getElementById(id).classList.remove('flex'); }
-    function openAddTickerModal() { openModal('add-ticker-modal'); }
-    function openAddEventModal() { openModal('add-event-modal'); refreshTickerSelect(); }
-
-    async function refreshTickerSelect() {
-      try {
-        const r = await fetch('/api/tickers');
-        const data = await r.json();
-        const sel = document.getElementById('event-ticker-select');
-        sel.innerHTML = data.map(t => `<option value="${t.ticker}">${t.ticker} — ${t.company_name}</option>`).join('');
-      } catch (_) {}
-    }
-
     // ── View Switcher ──
     document.getElementById('view-switcher').addEventListener('click', (e) => {
       const btn = e.target.closest('button');
@@ -659,24 +545,27 @@
 
       tbody.innerHTML = rows.map(row => {
         const isAlert = row.days_until_event !== null && row.days_until_event >= 0 && row.days_until_event <= 7;
+        const safeTicker = escapeHtml(row.ticker);
+        const safeCompany = escapeHtml(row.company_name);
+        const safeTitle = escapeHtml(row.next_event_title || '');
         return `
           <tr class="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors ${isAlert ? 'bg-rose-900/10' : ''}">
             <td class="px-5 py-4">
               <div class="flex items-center gap-2">
-                <span class="font-bold text-white font-mono">${row.ticker}</span>
+                <span class="font-bold text-white font-mono">${safeTicker}</span>
                 ${isAlert ? '<i class="fa-solid fa-bell text-rose-400 text-xs animate-pulse-slow" title="Alerting"></i>' : ''}
               </div>
             </td>
-            <td class="px-5 py-4 text-gray-300">${row.company_name}</td>
+            <td class="px-5 py-4 text-gray-300">${safeCompany}</td>
             <td class="px-5 py-4 text-right font-mono tabular-nums">${formatPrice(row.current_price)}</td>
             <td class="px-5 py-4 text-right">${formatChange(row.price_change_pct)}</td>
             <td class="px-5 py-4">
               <div class="flex items-center gap-2">
                 ${eventTypeBadge(row.next_event_type)}
-                <button onclick="openEventDetail(dashboardData.find(r=>r.ticker==='${row.ticker}'))"
+                <button onclick="openEventDetail(dashboardData.find(r=>r.ticker==='${safeTicker}'))"
                         class="text-gray-200 truncate max-w-[220px] block text-left hover:text-emerald-400 transition-colors"
                         ${!row.next_event_description ? 'disabled' : ''}>
-                  ${row.next_event_title || '—'}
+                  ${safeTitle || '—'}
                 </button>
               </div>
             </td>
@@ -722,8 +611,11 @@
               const d = new Date(ev.next_event_date);
               const day = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
               const isAlert = ev.days_until_event !== null && ev.days_until_event >= 0 && ev.days_until_event <= 7;
+              const safeTicker = escapeHtml(ev.ticker);
+              const safeTitle = escapeHtml(ev.next_event_title || '');
+              const safeCompany = escapeHtml(ev.company_name || '');
               return `
-                <button onclick="openEventDetail(dashboardData.find(r=>r.ticker==='${ev.ticker}'))"
+                <button onclick="openEventDetail(dashboardData.find(r=>r.ticker==='${safeTicker}'))"
                         class="w-full text-left flex items-start gap-4 p-4 rounded-xl border ${isAlert ? 'border-rose-800/40 bg-rose-900/10' : 'border-gray-800 bg-gray-800/30'} hover:bg-gray-700/50 transition-colors ${!ev.next_event_description ? 'cursor-default' : ''}">
                   <div class="flex flex-col items-center min-w-[60px]">
                     <span class="text-sm font-bold ${isAlert ? 'text-rose-400' : 'text-emerald-400'}">${d.getDate()}</span>
@@ -731,12 +623,12 @@
                   </div>
                   <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2 mb-1">
-                      <span class="font-bold font-mono text-white text-sm">${ev.ticker}</span>
+                      <span class="font-bold font-mono text-white text-sm">${safeTicker}</span>
                       ${eventTypeBadge(ev.next_event_type)}
                       ${impactBadge(ev.impact_level)}
                     </div>
-                    <p class="text-sm text-gray-200 truncate">${ev.next_event_title}</p>
-                    <p class="text-xs text-gray-500 mt-1">${ev.company_name}</p>
+                    <p class="text-sm text-gray-200 truncate">${safeTitle}</p>
+                    <p class="text-xs text-gray-500 mt-1">${safeCompany}</p>
                   </div>
                   <div class="text-right min-w-[60px] shrink-0">
                     <div class="font-mono text-sm ${isAlert ? 'text-rose-400 font-bold' : 'text-gray-300'}">${daysBadge(ev.days_until_event)}</div>
@@ -748,77 +640,6 @@
           </div>
         </div>
       `).join('');
-    }
-
-    // ── Delete Ticker ──
-    function confirmDelete(ticker) {
-      deleteTarget = ticker;
-      document.getElementById('delete-ticker-name').textContent = ticker;
-      openModal('delete-modal');
-    }
-
-    document.getElementById('delete-confirm-btn').addEventListener('click', async () => {
-      if (!deleteTarget) return;
-      try {
-        const r = await fetch(`/api/tickers/${deleteTarget}`, { method: 'DELETE' });
-        if (!r.ok && r.status !== 204) throw new Error('Delete failed');
-        showToast(`Deleted ${deleteTarget}`);
-        closeModal('delete-modal');
-        deleteTarget = null;
-        refreshDashboard();
-      } catch (e) {
-        showToast(`Failed to delete: ${e.message}`, 'error');
-      }
-    });
-
-    // ── Submit Ticker ──
-    async function submitTicker(e) {
-      e.preventDefault();
-      const form = e.target;
-      const data = Object.fromEntries(new FormData(form));
-      try {
-        const r = await fetch('/api/tickers', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-        });
-        if (!r.ok) {
-          const err = await r.json();
-          throw new Error(err.detail || 'Failed to add ticker');
-        }
-        showToast(`Added ${data.ticker.toUpperCase()}`);
-        closeModal('add-ticker-modal');
-        form.reset();
-        refreshDashboard();
-      } catch (e) {
-        showToast(e.message, 'error');
-      }
-    }
-
-    // ── Submit Event ──
-    async function submitEvent(e) {
-      e.preventDefault();
-      const form = e.target;
-      const data = Object.fromEntries(new FormData(form));
-      // Convert date-only to full datetime
-      data.event_date = new Date(data.event_date + 'T12:00:00').toISOString();
-      try {
-        const r = await fetch('/api/events', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-        });
-        if (!r.ok) {
-          const err = await r.json();
-          throw new Error(err.detail || 'Failed to add event');
-        }
-        showToast(`Event added for ${data.ticker}`);
-        closeModal('add-event-modal');
-        form.reset();
-        refreshDashboard();
-      } catch (e) {
-        showToast(e.message, 'error');
-      }
     }
 
     // ── Main Refresh ──

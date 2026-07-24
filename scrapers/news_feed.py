@@ -25,10 +25,18 @@ FEEDS = [
 # How many recent entries to check per feed (avoid re-processing old items)
 _MAX_ENTRIES = 10
 
-# In-memory dedup set — stores article URLs seen since the last restart.
-# A small set is fine because articles older than a few hours won't show
-# up in the top-N of the feed anyway.
-_seen_urls: set[str] = set()
+# Bounded dedup list — stores up to 2000 article URLs (FIFO eviction).
+_seen_urls: list[str] = []
+_MAX_SEEN_URLS = 2000
+
+
+def _mark_seen_url(url: str) -> None:
+    """Record a URL and evict oldest if over capacity."""
+    if url in _seen_urls:
+        return
+    _seen_urls.append(url)
+    while len(_seen_urls) > _MAX_SEEN_URLS:
+        _seen_urls.pop(0)
 
 
 def _fetch_feed(name: str, url: str) -> list[dict]:
@@ -80,10 +88,10 @@ def run_news_feed():
     for feed_name, feed_url in FEEDS:
         articles = _fetch_feed(feed_name, feed_url)
         for art in articles:
-            # Dedup by URL
+            # Dedup by URL (already filtered in _fetch_feed, double-check here)
             if art["url"] in _seen_urls:
                 continue
-            _seen_urls.add(art["url"])
+            _mark_seen_url(art["url"])
 
             ok = send_news_article(
                 title=art["title"],
