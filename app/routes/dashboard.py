@@ -136,4 +136,5 @@ def notify_status():
     return {
         "telegram": bool(settings.telegram_bot_token and settings.telegram_chat_id),
         "discord": bool(settings.discord_webhook_url),
+        "_debug_discord_prefix": settings.discord_webhook_url[:30] + "..." if settings.discord_webhook_url else None,
     }
