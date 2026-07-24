@@ -6,7 +6,7 @@ Skips gracefully if a ticker already exists in the system.
 
 import httpx, time, sys
 
-BASE = "http://localhost:8000"
+BASE = "https://pharma-edge.onrender.com"
 
 # Clean list — all confirmed clinical-stage biotech/pharma companies
 TICKERS = [
