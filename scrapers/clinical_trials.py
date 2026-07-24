@@ -88,6 +88,55 @@ def _extract_drug_name(title: str, interventions: list[dict]) -> str:
     return "Investigational"
 
 
+def _extract_mechanism(interventions: list[dict], brief_summary: str, drug_name: str) -> str:
+    """Try to extract the mechanism of action from the CT.gov study data.
+
+    Checks intervention descriptions first, then the brief summary, using
+    regex patterns that match mechanism-related sentences.
+    """
+    # ── 1. Check intervention descriptions ──
+    for inv in interventions:
+        desc = (inv.get("description") or "").strip()
+        if desc and len(desc) > 10:
+            # Try to find a mechanism-like sentence
+            for pat in [
+                r"([A-Z][^.]*(?:inhibitor|antagonist|agonist|modulator|blocker|antibody|conjugate|degrader|PROTAC|kinase|receptor|enzyme|peptide|fusion protein|small molecule|siRNA|mRNA|antisense|oligonucleotide|gene therapy|CAR-T|CAR\s*-?T|cell therapy|bispecific|monoclonal)[^.]*\.)",
+                r"([A-Z][^.]*(?:targets?|targeting|binds? to|directed against|specific for|selective for)[^.]*\.)",
+                r"([A-Z][^.]*(?:mechanism of action|MoA|pathway|signaling|signalling|cascade)[^.]*\.)",
+            ]:
+                m = re.search(pat, desc, re.IGNORECASE)
+                if m:
+                    return m.group(1).strip()
+
+    # ── 2. Check brief summary ──
+    if brief_summary:
+        summary = re.sub(r"<[^>]+>", "", brief_summary).strip()
+        if summary:
+            for pat in [
+                r"([A-Z][^.]*(?:inhibitor|antagonist|agonist|modulator|blocker|antibody|conjugate|degrader|PROTAC|kinase|receptor|enzyme|peptide|fusion protein|small molecule|siRNA|mRNA|antisense|oligonucleotide|gene therapy|CAR-T|CAR\s*-?T|cell therapy|bispecific|monoclonal)[^.]*\.)",
+                r"([A-Z][^.]*(?:targets?|targeting|binds? to|directed against|specific for|selective for)[^.]*\.)",
+                r"([A-Z][^.]*(?:mechanism of action|MoA|pathway|signaling|signalling|cascade)[^.]*\.)",
+            ]:
+                m = re.search(pat, summary, re.IGNORECASE)
+                if m and len(m.group(1).strip()) > 20:
+                    return m.group(1).strip()
+
+    # ── 3. Intervention type-based fallback ──
+    for inv in interventions:
+        inv_type = (inv.get("type") or "").lower()
+        name = (inv.get("name") or "").strip()
+        if inv_type in ("drug", "biological") and name and name != drug_name:
+            return f"{name} — investigated in this trial"
+        elif inv_type == "genetic":
+            return f"Gene therapy — {name}" if name else "Gene therapy"
+        elif inv_type == "device":
+            return f"Medical device — {name}" if name else "Medical device"
+        elif inv_type == "procedure":
+            return f"Procedure — {name}" if name else "Procedure"
+
+    return "See ClinicalTrials.gov for mechanism details"
+
+
 def _scrape_company(ticker: str, ticker_id: int) -> list[dict]:
     """Fetch recent/future Phase 2+ studies for a single company."""
     terms = search_terms(ticker)
@@ -154,6 +203,9 @@ def _study_to_event(study: dict, ticker: str, ticker_id: int) -> dict | None:
     if not nct_id or not title:
         return None
 
+    # ── Brief summary (for mechanism extraction) ──
+    brief_summary = proto.get("descriptionModule", {}).get("briefSummary", "")
+
     # ── Sponsor ──
     sponsor_name = (sc.get("leadSponsor") or {}).get("name", "")
     if not sponsor_name or not matches_ticker(ticker, sponsor_name):
@@ -183,6 +235,7 @@ def _study_to_event(study: dict, ticker: str, ticker_id: int) -> dict | None:
 
     # ── Build structured description ──
     drug_name = _extract_drug_name(title, interventions)
+    mechanism = _extract_mechanism(interventions, brief_summary, drug_name)
     condition_str = conditions[0] if conditions else "Various"
     trial_phase = phase_str.replace("_", " ").title()
     overall_status = sm.get("overallStatus", "")
@@ -200,7 +253,7 @@ def _study_to_event(study: dict, ticker: str, ticker_id: int) -> dict | None:
 
     desc_parts = [
         f"💊 Drug: {drug_name}",
-        f"⚙️  Mechanism: See trial details on ClinicalTrials.gov",
+        f"⚙️  Mechanism: {mechanism}",
         f"🔬 Phase: {trial_phase}",
         f"📋 Trial: {nct_id}",
         f"🎯 Milestone: {milestone}",
