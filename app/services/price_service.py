@@ -10,11 +10,29 @@ import yfinance as yf
 logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 logger = logging.getLogger(__name__)
 
+# Cloud hosts (Render, Railway, etc.) often get rate-limited by Yahoo Finance.
+# Setting a browser-like User-Agent helps avoid blocks.
+_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/125.0.0.0 Safari/537.36"
+)
+
+
+def _make_ticker(ticker: str) -> yf.Ticker:
+    """Create a yfinance Ticker with a browser-like User-Agent."""
+    t = yf.Ticker(ticker)
+    try:
+        t.session.headers["User-Agent"] = _UA
+    except Exception:
+        pass
+    return t
+
 
 def fetch_price_and_change(ticker: str) -> tuple[float | None, float | None]:
     """Return (current_price, 1-day_change_pct) for a single ticker."""
     try:
-        hist = yf.Ticker(ticker).history(period="5d")
+        hist = _make_ticker(ticker).history(period="5d")
         if hist is None or hist.empty:
             logger.debug("%s: no data", ticker)
             return None, None

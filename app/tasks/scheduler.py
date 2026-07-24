@@ -57,8 +57,11 @@ def seed_snapshots():
 def refresh_prices():
     """Fetch live prices for all tickers and upsert into PriceSnapshot.
 
-    Runs every 5 minutes.  Uses INSERT OR REPLACE to handle the upsert.
+    Runs every 5 minutes.
+    A small delay (1 s) between tickers helps avoid Yahoo rate limits on cloud hosts.
     """
+    import time
+
     db = SessionLocal()
     try:
         tickers = [t.ticker for t in db.query(Ticker).all()]
@@ -87,6 +90,9 @@ def refresh_prices():
                 updated_at=now,
             ))
             updated += 1
+
+            # Short delay between tickers to avoid Yahoo rate limiting
+            time.sleep(1.0)
 
         db.commit()
         logger.info("PriceSnapshot refreshed — %d tickers updated", updated)
