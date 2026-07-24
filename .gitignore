@@ -1,0 +1,26 @@
+# ── Environment (contains secrets!) ──
+.env
+
+# ── Python ──
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# ── Local database ──
+*.db
+*.sqlite
+data/*.db
+data/*.sqlite
+
+# ── IDE / OS ──
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
