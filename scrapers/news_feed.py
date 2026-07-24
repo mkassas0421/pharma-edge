@@ -22,8 +22,9 @@ FEEDS = [
     ("GlobeNewswire (Biotech)", "https://www.globenewswire.com/RssFeed/industry/8/feed"),
 ]
 
-# How many recent entries to check per feed (avoid re-processing old items)
-_MAX_ENTRIES = 10
+# How many recent entries to fetch per feed.
+# Lower = fewer but more recent articles per hourly run (keeps channel clean).
+_MAX_ENTRIES = 6
 
 # Bounded dedup list — stores up to 2000 article URLs (FIFO eviction).
 _seen_urls: list[str] = []

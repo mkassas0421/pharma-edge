@@ -424,9 +424,9 @@ def start_scheduler():
     from scrapers.sec_filings import run_sec_feed
     scheduler.add_job(run_sec_feed, "interval", minutes=30, id="sec_feed", replace_existing=True)
 
-    # ── Pharma news feed (15 min) ──
+    # ── Pharma news feed (hourly, ~3-10 important articles per run) ──
     from scrapers.news_feed import run_news_feed
-    scheduler.add_job(run_news_feed, "interval", minutes=15, id="news_feed", replace_existing=True)
+    scheduler.add_job(run_news_feed, "interval", minutes=60, id="news_feed", replace_existing=True)
 
     # ── Daily briefings ──
     from app.services.notifier import send_morning_briefing, send_evening_briefing
