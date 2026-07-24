@@ -268,7 +268,7 @@ def seed_snapshots():
 
         for t in ticker_rows:
             if t.ticker not in existing_tickers:
-                fallback = _FALLBACK_PRICES.get(t.ticker, 50.0)  # $50 default for unknown tickers
+                fallback = _FALLBACK_PRICES.get(t.ticker)  # None for delisted/no-data tickers
                 db.add(PriceSnapshot(
                     ticker=t.ticker,
                     price=fallback,
