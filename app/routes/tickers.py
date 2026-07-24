@@ -50,27 +50,6 @@ def create_ticker(body: TickerCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(ticker)
 
-    # ── Immediately scrape ClinicalTrials.gov for this ticker ──
-    try:
-        candidates = _scrape_company(ticker.ticker, ticker.id)
-        inserted = 0
-        for ev_data in candidates:
-            exists = db.query(CatalystEvent).filter(
-                CatalystEvent.external_id == ev_data["external_id"],
-                CatalystEvent.ticker == ev_data["ticker"],
-            ).first()
-            if exists:
-                continue
-            db.add(CatalystEvent(**ev_data))
-            inserted += 1
-        if inserted:
-            db.commit()
-            logger.info("Scraped %d event(s) for new ticker %s", inserted, ticker.ticker)
-        else:
-            logger.info("No events found on ClinicalTrials.gov for %s", ticker.ticker)
-    except Exception as exc:
-        logger.warning("Scraper failed for new ticker %s: %s", ticker.ticker, exc)
-
     return ticker
 
 

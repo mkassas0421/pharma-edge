@@ -76,11 +76,6 @@
           <button onclick="refreshDashboard()" class="hover:text-emerald-400 transition-colors" title="Refresh now">
             <i class="fa-solid fa-rotate"></i>
           </button>
-          <div class="h-4 w-px bg-gray-700"></div>
-          <button id="notify-status-btn" onclick="testNotification()" class="flex items-center gap-1.5 hover:text-emerald-400 transition-colors text-xs" title="Test notification">
-            <i id="notify-icon" class="fa-solid fa-bell-slash text-gray-600"></i>
-            <span id="notify-label" class="hidden sm:inline">Notify</span>
-          </button>
           <!-- Read-only mode: ticker management removed -->
         </div>
       </div>
@@ -826,44 +821,6 @@
       }
     }
 
-    // ── Notification test ──
-    async function testNotification() {
-      const icon = document.getElementById('notify-icon');
-      icon.className = 'fa-solid fa-spinner fa-spin text-amber-400';
-      try {
-        const r = await fetch('/api/test-notify?ticker=VRTX&days=5', { method: 'POST' });
-        if (r.ok) {
-          showToast('Test notification sent!', 'success');
-          icon.className = 'fa-solid fa-circle-check text-emerald-400';
-        } else {
-          const err = await r.json();
-          showToast(err.detail || 'Notification failed', 'error');
-          icon.className = 'fa-solid fa-bell-slash text-rose-400';
-        }
-      } catch (e) {
-        showToast('Network error', 'error');
-        icon.className = 'fa-solid fa-bell-slash text-gray-600';
-      }
-    }
-
-    async function checkNotifyStatus() {
-      try {
-        const r = await fetch('/api/notify-status');
-        const s = await r.json();
-        const icon = document.getElementById('notify-icon');
-        const label = document.getElementById('notify-label');
-        if (s.telegram || s.discord) {
-          icon.className = 'fa-solid fa-bell text-emerald-400';
-          if (label) label.textContent = s.telegram ? 'Telegram' : 'Discord';
-          document.getElementById('notify-status-btn').title = 'Send test notification';
-        } else {
-          icon.className = 'fa-solid fa-bell-slash text-gray-600';
-          if (label) label.textContent = 'Notify';
-          document.getElementById('notify-status-btn').title = 'Notifications not configured. Set in .env';
-        }
-      } catch (_) {}
-    }
-
     // ── Main Refresh ──
     async function refreshDashboard() {
       try {
@@ -918,7 +875,6 @@
     // ── Init ──
     document.addEventListener('DOMContentLoaded', () => {
       refreshDashboard();
-      checkNotifyStatus();
     });
     // Auto-refresh every 5 min
     setInterval(refreshDashboard, 5 * 60 * 1000);

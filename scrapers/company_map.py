@@ -1,9 +1,8 @@
 """Company name aliases — reads from the ``ticker_aliases`` table.
 
-The hardcoded seed data in ``_SEED_ALIASES`` is migrated to the database
-on first startup via ``seed_aliases()``. After that the scraper, search,
-and matching functions all query the DB so users can add tickers from the
-UI and everything Just Works.
+Aliases are auto-generated from the company name on first startup via
+``seed_aliases()``. After that the scraper, search, and matching functions
+all query the DB so users can add tickers from the UI and everything Just Works.
 """
 
 import datetime
@@ -14,62 +13,39 @@ from app.models.database import SessionLocal, Ticker, TickerAlias
 
 logger = logging.getLogger(__name__)
 
-# ── Seed data (migrated to DB once on first launch) ─────────────────────────
-
-_SEED_ALIASES: dict[str, list[str]] = {
-    "AMGN": ["Amgen", "Amgen Inc.", "Amgen Inc"],
-    "BIIB": ["Biogen", "Biogen Inc.", "Biogen Inc"],
-    "GILD": ["Gilead Sciences", "Gilead Sciences, Inc.", "Kite, A Gilead Company"],
-    "MRNA": ["ModernaTX, Inc.", "Moderna"],
-    "REGN": ["Regeneron Pharmaceuticals", "Regeneron"],
-    "VRTX": ["Vertex Pharmaceuticals Incorporated", "Vertex Pharmaceuticals"],
-    "SNY": ["Sanofi", "Sanofi-Aventis"],
-    "AZN": ["AstraZeneca", "AstraZeneca PLC", "Acerta Pharma BV"],
-    "ALKS": ["Alkermes, Inc.", "Alkermes"],
-    "BMRN": ["BioMarin Pharmaceutical", "BioMarin"],
-    "CRSP": ["CRISPR Therapeutics", "CRISPR Therapeutics AG"],
-    "EXEL": ["Exelixis, Inc.", "Exelixis"],
-    "NTLA": ["Intellia Therapeutics", "Intellia"],
-    "SRPT": ["Sarepta Therapeutics, Inc.", "Sarepta Therapeutics"],
-    "UTHR": ["United Therapeutics", "United Therapeutics Corporation"],
-    "BGNE": ["BeiGene", "BeiGene, Ltd."],
-    "ACAD": ["ACADIA Pharmaceuticals Inc.", "ACADIA Pharmaceuticals"],
-    "ALLO": ["Allogene Therapeutics", "Allogene"],
-    "BEAM": ["Beam Therapeutics", "Beam Therapeutics Inc."],
-    "EDIT": ["Editas Medicine, Inc.", "Editas Medicine"],
-    "FATE": ["Fate Therapeutics", "Fate Therapeutics, Inc."],
-    "RXRX": ["Recursion Pharmaceuticals Inc.", "Recursion Pharmaceuticals"],
-    "RCKT": ["Rocket Pharmaceuticals", "Rocket Pharmaceuticals, Inc."],
-    "VERV": ["Verve Therapeutics", "Verve"],
-    "CRBU": ["Caribou Biosciences", "Caribou"],
-    "DNLI": ["Denali Therapeutics", "Denali"],
-    "KURA": ["Kura Oncology", "Kura Oncology, Inc."],
-    "RCUS": ["Arcus Biosciences", "Arcus Biosciences, Inc."],
-    "KYMR": ["Kymera Therapeutics, Inc.", "Kymera Therapeutics"],
-    "NBIX": ["Neurocrine Biosciences", "Neurocrine Biosciences, Inc.", "Neurocrine UK Limited"],
-    "IONS": ["Ionis Pharmaceuticals, Inc.", "Ionis Pharmaceuticals"],
-}
-
 
 def seed_aliases():
-    """Populate the ``ticker_aliases`` table from ``_SEED_ALIASES``. Idempotent."""
+    """Auto-generate ClinicalTrials.gov aliases for every tracked ticker.
+
+    For each ticker that has zero aliases, creates aliases from the company
+    name with common suffix/prefix cleanups so the CT.gov scraper can find
+    relevant studies.
+    """
     db = SessionLocal()
     try:
-        if db.query(TickerAlias).count() > 0:
-            return
-
+        tickers = db.query(Ticker).all()
         now = datetime.datetime.utcnow()
         added = 0
-        for ticker_sym, aliases in _SEED_ALIASES.items():
-            ticker_obj = db.query(Ticker).filter(Ticker.ticker == ticker_sym).first()
-            if not ticker_obj:
-                continue
-            for alias in aliases:
-                db.add(TickerAlias(ticker_id=ticker_obj.id, alias=alias, created_at=now))
-                added += 1
 
-        db.commit()
-        logger.info("Seeded %d aliases for %d tickers", added, len(_SEED_ALIASES))
+        for t in tickers:
+            existing = db.query(TickerAlias).filter(TickerAlias.ticker_id == t.id).count()
+            if existing > 0:
+                continue  # already has aliases (e.g. from POST /api/tickers)
+
+            base = t.company_name
+            aliases = list(dict.fromkeys([  # deduplicate preserving order
+                base,
+                re.sub(r"\s+(Inc\.?|PLC|Ltd\.?|Corp\.?|S\.?A\.?|N\.?V\.?|GmbH|LLC)\s*$", "", base).strip(),
+                base.replace(",", ""),
+            ]))
+            for alias in aliases:
+                if alias and len(alias) > 1:
+                    db.add(TickerAlias(ticker_id=t.id, alias=alias, created_at=now))
+                    added += 1
+
+        if added:
+            db.commit()
+            logger.info("Auto-seeded %d aliases for %d tickers", added, len(tickers))
     except Exception as exc:
         logger.error("seed_aliases failed: %s", exc)
         db.rollback()
