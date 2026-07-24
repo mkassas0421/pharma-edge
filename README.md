@@ -1,191 +1,119 @@
-# Pharma Catalyst Alert System
+# Pharma Catalyst Alert System 🧬📊
 
-A production-ready web application that tracks 257 clinical-stage pharmaceutical companies and alerts you about upcoming high-impact events (FDA decisions, clinical trial readouts) that historically trigger major stock price movements.
+A production-ready web application that tracks **295 clinical-stage pharmaceutical companies** and alerts you about upcoming high-impact events (FDA decisions, clinical trial readouts) that historically trigger major stock price movements.
 
-**Current coverage:** 257 tickers, 592 events across 6 data sources, updated automatically.
+> **Current coverage:** 295 tickers, 1000+ events across 6 data sources, updated automatically.
+
+🔗 **Live demo:** [pharma-edge.onrender.com](https://pharma-edge.onrender.com)
+
+---
+
+## Features
+
+- **✅ 295 tickers** — large-cap biotech to micro-cap pharma
+- **✅ Live prices** — updated every 5 minutes (yfinance)
+- **✅ 228 real fallback prices** — dashboard shows prices from the first load
+- **✅ Automatic event discovery** — ClinicalTrials.gov + SEC EDGAR
+- **✅ PDUFA date extraction** — from SEC 8-K/6-K filings, Exhibit 99.1
+- **✅ 34 hand-curated events** — detailed drug descriptions & background
+- **✅ Table + Timeline view** — sortable, filterable
+- **✅ Event detail modal** — drug name, mechanism, phase, trial, analysis
+- **✅ Live alert banner** — red bar for events ≤7 days
+- **✅ Discord notifications** — automatic push alerts
+- **✅ Dark mode dashboard** — Tailwind CSS, responsive
+- **✅ PostgreSQL + SQLite** — production / development modes
+- **✅ Docker + Render deploy** — one-click deployment
+- **✅ Alembic migrations** — database schema versioning
+- **✅ Read-only dashboard** — users can't add/delete tickers from UI
 
 ---
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                         Browser Dashboard                                │
-│              Tailwind CSS · vanilla JS · FontAwesome                     │
-└──────────────────────────┬───────────────────────────────────────────────┘
-                           │  GET /api/dashboard  (sub-50ms from cache)
-                           │  POST /api/tickers   (scrapes immediately)
-                           ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│                      FastAPI Backend (Python)                            │
-│                                                                           │
-│  ┌──────────┐  ┌──────────┐  ┌──────────────┐  ┌───────────────┐        │
-│  │ Dashboard │  │ Tickers  │  │   Events     │  │  Notifications │        │
-│  │  Routes   │  │  Routes  │  │   Routes     │  │   Routes       │        │
-│  └────┬──────┘  └────┬─────┘  └──────┬───────┘  └───────┬───────┘        │
-│       │              │               │                   │               │
-│       ▼              ▼               ▼                   ▼               │
-│  ┌──────────────────────────────────────────────────────────────────┐    │
-│  │                    SQLite Database                                │    │
-│  │  ┌──────────┐  ┌──────────────┐  ┌──────────────┐               │    │
-│  │  │  Ticker  │  │CatalystEvent │  │PriceSnapshot │               │    │
-│  │  │  ticker  │  │ title        │  │ price, chg%  │               │    │
-│  │  │  company │  │ event_date   │  │ updated_at   │               │    │
-│  │  │  sector  │  │ impact_level  │  └──────────────┘               │    │
-│  │  └──────────┘  │ alert_sent   │                                   │    │
-│  │  ┌──────────┐  │ external_id  │  ┌──────────────┐               │    │
-│  │  │ Aliases  │  │ source       │  │   (5 tables) │               │    │
-│  │  └──────────┘  │ description  │  └──────────────┘               │    │
-│  │                └──────────────┘                                   │    │
-│  └──────────────────────────────────────────────────────────────────┘    │
-│                                                                           │
-│  ┌──────────────────────────────────────────────────────────────────┐    │
-│  │                    Background Scheduler (APScheduler)              │    │
-│  │                                                                     │    │
-│  │  ┌─────────────────────────────────┐  ┌────────────────────────┐  │    │
-│  │  │  refresh_prices (5 min)         │  │  clinical_trials       │  │    │
-│  │  │  yfinance → PriceSnapshot table │  │  pipeline (24h)        │  │    │
-│  │  └─────────────────────────────────┘  │  CT.gov API → events   │  │    │
-│  │                                       └────────────────────────┘  │    │
-│  │  ┌─────────────────────────────────┐  ┌────────────────────────┐  │    │
-│  │  │  PDUFA pipeline (60 min)        │  │  check_alerts (6h)     │  │    │
-│  │  │  SEC Atom feed → 8-K/6-K →     │  │  7-day events →       │  │    │
-│  │  │  Exhibit 99.1 → PDUFA extract  │  │  Discord / Telegram   │  │    │
-│  │  └─────────────────────────────────┘  └────────────────────────┘  │    │
-│  └──────────────────────────────────────────────────────────────────┘    │
-└──────────────────────────────────────────────────────────────────────────┘
+Browser Dashboard (Tailwind CSS · vanilla JS · FontAwesome)
+       │
+       │  GET /api/dashboard  (<50ms cached)
+       │  POST /api/tickers   (instant, <50ms, no sync CT.gov scrape)
+       ▼
+┌──────────────────────────────────────────────────────────────┐
+│                  FastAPI Backend (Python 3.11)                │
+│  ┌──────────┐  ┌──────────┐  ┌──────────────┐  ┌─────────┐ │
+│  │ Dashboard │  │ Tickers  │  │   Events     │  │Notific. │ │
+│  │  Routes   │  │  Routes  │  │   Routes     │  │ Routes  │ │
+│  └────┬──────┘  └────┬─────┘  └──────┬───────┘  └────┬────┘ │
+│       ▼              ▼               ▼                ▼       │
+│  ┌──────────────────────────────────────────────────────────┐ │
+│  │   PostgreSQL (production) / SQLite (development)          │ │
+│  │   5 tables: tickers, catalyst_events, price_snapshots,    │ │
+│  │            ticker_aliases, alembic_version                │ │
+│  └──────────────────────────────────────────────────────────┘ │
+│  ┌──────────────────────────────────────────────────────────┐ │
+│  │          Background Scheduler (APScheduler)               │ │
+│  │  refresh_prices (5m) │ clinical_trials (24h)             │ │
+│  │  PDUFA pipeline (60m) │ check_alerts (6h)                │ │
+│  └──────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-## Data Sources
+### Design decisions
 
-| Source | What it provides | Method | Frequency |
-|---|---|---|---|
-| **Yahoo Finance** (`yfinance`) | Live stock prices, daily change % | Scheduler → `PriceSnapshot` table | Every 5 min |
-| **ClinicalTrials.gov** (API v2) | Phase 2/3 trial readouts, drug name, NCT ID, status | Sponsor-name search → match tracked tickers | Every 24h + on ticker creation |
-| **SEC EDGAR** (Atom feed + exhibit download) | PDUFA target action dates from 8-K / 6-K filings | Atom feed → CIK→ticker match → Exhibit 99.1 download → regex date extraction | Every 60 min + catch-up on startup |
-| **Seed data** (`seed_data.py`) | 34 hand-curated events with detailed backgrounds, drug mechanisms, trial context | Loaded once on first startup | — |
-| **Known PDUFA calendar** (web-sourced) | Additional PDUFA dates found via web research | Manually added via API | As needed |
-| **Ticker creation API** | Immediate ClinicalTrials.gov scrape for new tickers | `POST /api/tickers` triggers `_scrape_company()` | On demand |
-
-### Key design decisions
-
-1. **No on-demand API calls.** The dashboard never calls yfinance, ClinicalTrials.gov, or SEC during a user request. All data is pre-cached in SQLite tables by background jobs. Response times are sub-50ms regardless of upstream API status.
-
-2. **Exhibit-based PDUFA extraction.** PDUFA dates aren't in the main 8-K form — they're in **Exhibit 99.1** (the press release attachment). The scraper lists the filing directory, identifies exhibit files by name pattern (`ex99*`, `ex-99*`), downloads them, and extracts dates via regex.
-
-3. **6-K support for foreign companies.** Companies like Sanofi (SNY) file 6-K forms instead of 8-K. The pipeline monitors both form types.
-
-4. **Alert deduplication.** Each event is alerted at most once — `alert_sent` timestamp prevents re-alerting on subsequent scheduler runs.
-
-5. **Auto-generated aliases.** When a ticker is created, ClinicalTrials.gov sponsor aliases are auto-generated from the company name with punctuation stripping.
+1. **No on-demand API calls.** All data is pre-cached by background jobs. Response times <50ms.
+2. **Exhibit-based PDUFA extraction.** PDUFA dates are in **Exhibit 99.1**, not the main 8-K form.
+3. **6-K support for foreign companies.** Pipeline monitors both 8-K (domestic) and 6-K (foreign).
+4. **Alert deduplication.** Each event fired at most once (`alert_sent` timestamp).
+5. **Auto-generated aliases.** CT.gov sponsor aliases generated from company name.
+6. **No sync CT.gov scrape on ticker creation.** The 24h background pipeline handles event discovery.
 
 ---
 
 ## Quick Start
 
-### Prerequisites
-- Python 3.11+
-- pip
-
-### Installation
+### Local development (SQLite)
 
 ```bash
 cd pharma-alert
 pip install -r requirements.txt
-
-# Edit .env and add at least one notification channel:
-#   DISCORD_WEBHOOK_URL=...
-#   TELEGRAM_BOT_TOKEN=...
-#   TELEGRAM_CHAT_ID=...
+python main.py
+# → http://localhost:8000
 ```
 
-### Running
+### Production (PostgreSQL)
 
 ```bash
+export DATABASE_URL=postgresql://user:pass@host:5432/db
+python scripts/migrate.py
 python main.py
 ```
 
-Open **http://localhost:8000**. On first launch the database is automatically created, seeded with 34 hand-curated events, and the catch-up pipeline runs in the background (takes ~3 minutes to scan SEC for PDUFA filings).
+### Docker
+
+```bash
+docker build -t pharma-alert .
+docker run -p 8000:8000 -e DATABASE_URL="..." pharma-alert
+```
 
 ---
 
-## Dashboard Features
+## Deployment Timeline (first startup)
 
-### Stock Table
-All tracked tickers with live prices (updated every 5 min), daily change %, next catalyst event, impact level (color-coded), and countdown (red ≤7 days). Click any column header to sort, use the filter bar to search by ticker/name, impact level, or event type.
-
-### Timeline View
-Switch to **Timeline** for a month-grouped visual layout.
-
-### Event Detail Modal
-Click any event to see drug name, phase, trial ID, milestone, and background summary.
-
-### Notifications
-When Discord/Telegram is configured, a green bell icon appears in the nav bar. Automatic alerts fire for events ≤7 days away, once per event.
+| Time | What happens |
+|---|---|
+| **0 sec** | 295 tickers on dashboard (228 real prices, 67 delisted = `--`) |
+| **5-10 min** | Live prices arrive (yfinance 5-min cycle) |
+| **~60 min** | 1000+ events from ClinicalTrials.gov pipeline |
+| **24h** | Full sync complete, daily updates thereafter |
 
 ---
 
-## Pipeline Details
+## Data Sources
 
-### 1. Clinical Trials Pipeline (`scrapers/clinical_trials.py`)
-
-```
-ClinicalTrials.gov API v2 (free, no key required)
-  │
-  ├─ For each tracked ticker:
-  │   ├─ Look up sponsor aliases from ticker_aliases table
-  │   ├─ Search: query.term = "Vertex Pharmaceuticals"
-  │   └─ Filter: Phase 2+, future/recent completion date
-  │
-  ├─ INSERT new studies as CatalystEvent rows
-  └─ UPDATE existing studies (date, title, phase, description)
-```
-
-- Runs every 24 hours
-- Also runs immediately when a new ticker is created
-- Deduplicates by NCT ID (`external_id`)
-- Updates existing events when trial dates slip
-
-### 2. PDUFA Pipeline (`scrapers/pdufa.py`)
-
-```
-SEC EDGAR
-  │
-  ├─ CATCH-UP (first run only):
-  │   ├─ Search: "PDUFA target action date" (2 year window)
-  │   ├─ Paginate 20 pages → match tracked CIKs
-  │   └─ Per-ticker fallback for missed companies
-  │
-  └─ ONGOING (every 60 min):
-      ├─ SEC Atom feed: browse-edgar?type=8-K&type=6-K
-      ├─ Parse CIK + ticker from feed title
-      ├─ Match against tracked tickers
-      ├─ Get filing directory listing
-      ├─ Download Exhibit 99.1 (ex99* or ex-99* .htm files)
-      ├─ Check for "PDUFA" keyword
-      └─ Extract date + drug name via regex patterns:
-           "assigned a PDUFA target action date of November 30, 2025"
-           "PDUFA target action date is November 30, 2025"
-```
-
-- Filters out past dates (>30 days old)
-- Creates events with `source = "sec_edgar_pdufa"` and `external_id = "SEC-{ticker}-{YYYYMMDD}"`
-- Supports both 8-K (domestic) and 6-K (foreign company) filings
-- KURA test case confirmed: Exhibit 99.1 correctly yields "ziftomenib" with "November 30, 2025"
-
-### 3. Price Refresh (`services/price_service.py`)
-
-- yfinance `history(period="5d")` for each ticker
-- Writes to `PriceSnapshot` table (ticker PK, price, change %, timestamp)
-- Dashboard reads exclusively from this table — no live yfinance calls
-- Fallback prices hardcoded for all tracked tickers (used until first refresh)
-
-### 4. Alert Engine (`services/notifier.py` + `tasks/scheduler.py`)
-
-- `check_alerts()` runs every 6 hours
-- Finds unsent events (alert_sent IS NULL) within 7-day window
-- Sends via configured Telegram and/or Discord
-- Sets `alert_sent = now()` to prevent re-alerting
+| Source | What it provides | Frequency |
+|---|---|---|
+| **Yahoo Finance** (`yfinance`) | Live stock prices, daily change % | Every 5 min |
+| **ClinicalTrials.gov** (API v2) | Phase 2/3 trial readouts | Every 24h |
+| **SEC EDGAR** (Atom feed) | PDUFA dates from 8-K/6-K filings | Every 60 min |
+| **Seed data** | 295 tickers + 34 hand-curated events | First startup only |
 
 ---
 
@@ -195,8 +123,8 @@ SEC EDGAR
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/tickers` | List all tracked tickers |
-| `POST` | `/api/tickers` | Add ticker + auto-generate aliases + immediate CT.gov scrape |
-| `DELETE` | `/api/tickers/{ticker}` | Remove ticker |
+| `POST` | `/api/tickers` | Add ticker (instant, no sync scrape) |
+| `DELETE` | `/api/tickers/{ticker}` | Delete ticker |
 
 ### Events
 | Method | Endpoint | Description |
@@ -209,57 +137,49 @@ SEC EDGAR
 ### Dashboard
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/dashboard` | Full dashboard data (from PriceSnapshot + DB, no live API calls) |
-| `GET` | `/api/dashboard/stats` | Summary: total, upcoming, alerting counts |
+| `GET` | `/api/dashboard` | Full dashboard data (cached, <50ms) |
+| `GET` | `/api/dashboard/stats` | Summary counts |
+| `GET` | `/` | HTML dashboard |
+| `GET` | `/health` | Health check |
 
 ### Notifications
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/notify-status` | Which channels are configured |
-| `POST` | `/api/test-notify` | Send a test notification |
+| `POST` | `/api/test-notify` | Send test alert (no UI button) |
 
 ---
 
-## Adding a New Ticker
+## Dashboard
 
-**From the UI** (recommended):
-1. Click **"Add Ticker"** → enter symbol + company name
-2. System auto-generates ClinicalTrials.gov aliases
-3. Scrapes CT.gov for active Phase 2+ trials → inserts events (3-5 sec)
-4. Dashboard shows ticker immediately with fallback price
-5. Live price arrives within 5 minutes (scheduler refresh)
+**Read-only** — no "Add Ticker" button, no delete icons.
 
-**From the API:**
-```bash
-curl -X POST http://localhost:8000/api/tickers \
-  -H "Content-Type: application/json" \
-  -d '{"ticker": "SNY", "company_name": "Sanofi S.A."}'
-```
+### Table columns
+Ticker, Company, Price (228 real fallbacks), Change %, Next Catalyst (clickable), Date, Impact, Countdown
+
+### Timeline view
+Month-grouped visual layout with event type badges and countdown.
+
+### Event detail modal
+Drug name, mechanism, phase, trial name, milestone, and background analysis.
 
 ---
 
-## Database Tables
+## Notifications
 
-| Table | Key Columns | Purpose |
-|---|---|---|
-| `tickers` | `ticker`, `company_name`, `sector` | Tracked companies |
-| `catalyst_events` | `ticker`, `title`, `event_date`, `impact_level`, `description`, `alert_sent`, `external_id`, `source` | All events (seed, scraped, PDUFA, manual) |
-| `price_snapshots` | `ticker` (PK), `price`, `change_percent`, `updated_at` | Cached live prices |
-| `ticker_aliases` | `ticker_id`, `alias` | CT.gov sponsor search names |
+**Discord** — rich embed with color-coded border (green/yellow/grey):
+- Ticker, date, countdown, impact level
+- Yahoo Finance + Dashboard links
 
-**Event sources:** `manual` (seed), `clinicaltrials_gov`, `sec_edgar_pdufa`, `known_pdufa`
+**Telegram** — HTML formatted message (optional)
 
----
-
-## Configuration
+### Setup
 
 ```ini
-DATABASE_URL=sqlite:///./data/pharma_alerts.db
-TELEGRAM_BOT_TOKEN=           # Create via @BotFather
-TELEGRAM_CHAT_ID=
-DISCORD_WEBHOOK_URL=          # Create in Discord channel settings
-ALERT_DAYS_BEFORE=7           # Alert window (default 7 days)
-BASE_URL=http://localhost:8000 # Used in notification links
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+TELEGRAM_BOT_TOKEN=...     # optional
+TELEGRAM_CHAT_ID=...       # optional
+ALERT_DAYS_BEFORE=7
 ```
 
 ---
@@ -268,33 +188,134 @@ BASE_URL=http://localhost:8000 # Used in notification links
 
 ```
 pharma-alert/
-├── main.py                         # FastAPI entry point, startup hooks
-├── .env                            # Environment variables
+├── main.py                         # FastAPI entry point
+├── Dockerfile                      # Container runtime
+├── render.yaml                     # Render Blueprint
+├── .env.example                    # Env template
 ├── requirements.txt
-├── README.md
+├── alembic.ini                     # DB migrations
 ├── app/
-│   ├── config.py                   # pydantic-settings wrapper
+│   ├── config.py                   # pydantic-settings
 │   ├── models/
-│   │   ├── database.py             # SQLAlchemy ORM (5 tables) + auto-migrations
-│   │   ├── schemas.py              # Pydantic request/response models
-│   │   └── __init__.py
+│   │   ├── database.py             # SQLAlchemy ORM
+│   │   └── schemas.py              # Pydantic models
 │   ├── routes/
-│   │   ├── dashboard.py            # /api/dashboard, /stats, /test-notify, /notify-status
-│   │   ├── tickers.py              # CRUD + auto-scrape on create
+│   │   ├── dashboard.py            # Dashboard API
+│   │   ├── tickers.py              # CRUD
 │   │   └── events.py               # CRUD
 │   ├── services/
-│   │   ├── price_service.py        # yfinance wrapper (scheduler only)
-│   │   └── notifier.py             # Telegram + Discord sender
+│   │   ├── price_service.py        # yfinance wrapper
+│   │   └── notifier.py             # Discord + Telegram
 │   ├── tasks/
-│   │   └── scheduler.py            # APScheduler: prices(5m), alerts(6h), trials(24h), PDUFA(60m)
+│   │   └── scheduler.py            # APScheduler
 │   └── templates/
-│       └── dashboard.html          # Tailwind CSS dark-mode dashboard
+│       └── dashboard.html          # Tailwind CSS UI
 ├── scrapers/
-│   ├── company_map.py              # Ticker → alias mapping (reads from DB)
-│   ├── clinical_trials.py          # CT.gov API v2 scraper + pipeline
-│   └── pdufa.py                    # SEC EDGAR PDUFA extractor (Atom feed + exhibit parser)
+│   ├── company_map.py              # Alias management
+│   ├── clinical_trials.py          # CT.gov scraper
+│   └── pdufa.py                    # SEC EDGAR PDUFA
 ├── data/
-│   └── seed_data.py                # 34 hand-curated events
+│   └── seed_data.py                # 295 tickers + 34 events
+├── alembic/
+│   └── versions/
+│       └── 001_initial.py          # Initial migration
 └── scripts/
-    └── add_tickers.py              # Batch ticker import script
+    └── migrate.py                  # Migration commands
 ```
+
+---
+
+## Database
+
+### Tables
+
+| Table | Key columns | Purpose |
+|---|---|---|
+| `tickers` | `ticker`, `company_name`, `sector` | Tracked companies |
+| `catalyst_events` | `ticker`, `title`, `event_date`, `impact_level` | All events |
+| `price_snapshots` | `ticker` (PK), `price`, `change_percent` | Cached prices |
+| `ticker_aliases` | `ticker_id`, `alias` | CT.gov search names |
+
+### Supported RDBMS
+- **SQLite** — development only, auto `create_all()`
+- **PostgreSQL** — production, `alembic upgrade head` on startup
+
+---
+
+## Configuration
+
+```ini
+DATABASE_URL=sqlite:///./data/pharma_alerts.db  # or PostgreSQL URL
+DISCORD_WEBHOOK_URL=                             # Discord notifications
+TELEGRAM_BOT_TOKEN=                              # Telegram (optional)
+TELEGRAM_CHAT_ID=                                # Telegram (optional)
+ALERT_DAYS_BEFORE=7                              # Alert window
+REFRESH_INTERVAL_HOURS=6                         # Alert check frequency
+BASE_URL=http://localhost:8000                    # Dashboard URL
+```
+
+---
+
+## Development
+
+### Add a ticker
+
+```bash
+curl -X POST http://localhost:8000/api/tickers \
+  -H "Content-Type: application/json" \
+  -d '{"ticker": "SNY", "company_name": "Sanofi S.A."}'
+```
+
+Instant (<50ms). CT.gov events are picked up by the 24h pipeline.
+
+### Migrations
+
+```bash
+python scripts/migrate.py           # upgrade to latest
+python scripts/migrate.py --check   # check pending
+python scripts/migrate.py --history # show history
+```
+
+### Seed data
+
+`data/seed_data.py` contains 295 tickers + 34 curated events (Jul-Dec 2026), each with detailed drug mechanism and market context.
+
+---
+
+## Performance
+
+| Operation | Response time | Notes |
+|---|---|---|
+| Dashboard load | <50ms | Fully cached |
+| Add ticker | <50ms | No sync CT.gov scrape |
+| Price refresh (1 ticker) | 200-500ms | yfinance dependent |
+| Full price cycle (295 tickers) | ~2.5 min | 0.5s delay between |
+| CT.gov pipeline (295 tickers) | ~60 min | 1s delay between |
+
+---
+
+## FAQ
+
+### How up-to-date is the data?
+- **Prices:** every 5 minutes
+- **PDUFA dates:** every 60 minutes
+- **Clinical trials:** every 24 hours
+- **Alerts:** every 6 hours
+
+### Do I need API keys?
+**No.** ClinicalTrials.gov, yfinance, and SEC EDGAR are all free/public. Only Discord webhook requires registration (free).
+
+### What if an API fails?
+- **yfinance failure:** keeps existing price
+- **CT.gov failure:** retries in 24 hours
+- **SEC failure:** retries in 60 minutes
+
+### How do I add tickers?
+Via API: `POST /api/tickers`. No "Add Ticker" button on the dashboard (read-only).
+
+### Why are 67 tickers showing `--`?
+Those are delisted companies no longer trading ($ACLX, $ADVM, $AKRO, etc.).
+
+---
+
+*Last updated: 2026-07-24 — 295 tickers, 1000+ events, PostgreSQL + Docker + Render*
