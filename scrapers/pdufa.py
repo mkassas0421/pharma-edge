@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 SEC_ARCHIVE = "https://www.sec.gov/Archives/edgar/data"
 SEC_SEARCH = "https://efts.sec.gov/LATEST/search-index"
-H = {"User-Agent": "PharmaCatalystAlert/1.0 (research@example.com)"}
+H = {"User-Agent": "PharmaCatalystAlert/1.0 (admin@pharma-edge.com)"}
 
 PDUFA_PATTERNS = [
     r"assigned\s+(?:a\s+)?PDUFA\s+(?:goal\s+)?(?:target\s+)?action\s+date\s+(?:of|is)\s+(\w+\s+\d{1,2},?\s*\d{4})",

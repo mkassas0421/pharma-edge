@@ -28,7 +28,10 @@ logger = logging.getLogger(__name__)
 SEC_BASE = "https://www.sec.gov"
 SEC_ATOM = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type={form}&output=atom"
 
-H = {"User-Agent": "PharmaCatalystAlert/1.0 (research@example.com)"}
+H = {"User-Agent": "PharmaCatalystAlert/1.0 (admin@pharma-edge.com)"}
+
+# Delay between feed requests to avoid SEC rate limiting
+_SEC_FEED_DELAY = 3  # seconds
 
 # Which form types to monitor, with human labels
 FORM_TYPES = {
@@ -144,7 +147,11 @@ def run_sec_feed():
         total_matches = 0
         matches = []
 
-        for form in FORM_TYPES:
+        import time
+        for i, form in enumerate(FORM_TYPES):
+            # Rate-limit: 3s delay between feeds (SEC requires polite polling)
+            if i > 0:
+                time.sleep(_SEC_FEED_DELAY)
             entries = _fetch_feed(form)
             for entry in entries:
                 if entry["accession"] and entry["accession"] in _seen_filings:
