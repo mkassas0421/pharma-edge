@@ -30,10 +30,7 @@ def _make_ticker(ticker: str) -> yf.Ticker:
 
 
 def fetch_price_and_change(ticker: str) -> tuple[float | None, float | None]:
-    """Return (current_price, 1-day_change_pct) for a single ticker.
-
-    Guards against sub-penny rounding artifacts and absurd % changes.
-    """
+    """Return (current_price, 1-day_change_pct) for a single ticker."""
     try:
         hist = _make_ticker(ticker).history(period="5d")
         if hist is None or hist.empty:
@@ -44,25 +41,15 @@ def fetch_price_and_change(ticker: str) -> tuple[float | None, float | None]:
         latest = float(closes.iloc[-1])
         prev = float(closes.iloc[-2]) if len(closes) > 1 else latest
 
-        # ── Rounding ──
-        # Sub-penny stocks (price < $0.01) get 4 decimal places.
-        # Normal stocks use 2 decimal places.
+        # Sub-penny stocks get 4 decimal places to prevent $0.00 display
         decimals = 4 if latest < 0.01 else 2
         price = round(latest, decimals)
 
-        # ── Change % ──
-        # Skip % change if the previous close is near-zero — otherwise
-        # tiny absolute moves produce absurd percentages (e.g. 300%).
-        if not prev or prev < 0.0001:
-            change = None
-        elif prev < 0.01:
-            # Sub-penny: compute with 4 decimals
+        # Compute % change normally — big moves on penny stocks are relevant
+        if prev and prev > 0:
             change = round(((latest - prev) / prev) * 100, 2)
         else:
-            change = round(((latest - prev) / prev) * 100, 2)
-            # Clamp obviously absurd values
-            if abs(change) > 500:
-                change = None
+            change = None
 
         return price, change
     except Exception as exc:
