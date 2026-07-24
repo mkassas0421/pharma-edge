@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     discord_webhook_sec_live: str = ""
     discord_webhook_briefing: str = ""
     discord_webhook_clinical: str = ""
+    discord_webhook_news: str = ""
 
     alert_days_before: int = 7
     refresh_interval_hours: int = 6

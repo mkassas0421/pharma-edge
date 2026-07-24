@@ -140,4 +140,5 @@ def notify_status():
         "sec_live": bool(settings.discord_webhook_sec_live),
         "briefing": bool(settings.discord_webhook_briefing),
         "clinical": bool(settings.discord_webhook_clinical),
+        "news_feed": bool(settings.discord_webhook_news),
     }

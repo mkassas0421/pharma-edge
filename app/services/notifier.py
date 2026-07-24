@@ -275,6 +275,25 @@ def send_evening_briefing() -> bool:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# CHANNEL: #news-feed  (15-min pharma news)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def send_news_article(title: str, url: str, source: str, summary: str = "") -> bool:
+    """Push a pharma news article to the #news-feed Discord channel."""
+    embed = {
+        "title": title[:256],
+        "url": url,
+        "description": (summary[:500] if summary else None),
+        "color": 0x0ea5e9,
+        "fields": [
+            {"name": "Source", "value": source, "inline": True},
+        ],
+        "footer": {"text": f"PharmaEdge News · {datetime.datetime.utcnow().strftime('%b %d, %H:%M')} UTC"},
+    }
+    return _send_embed(settings.discord_webhook_news, embed)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Legacy: generic send (kept for backward compat)
 # ═══════════════════════════════════════════════════════════════════════════
 
