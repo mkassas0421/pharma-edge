@@ -15,7 +15,7 @@ A production-ready web application that tracks **228 clinical-stage pharmaceutic
 - **✅ 228 real fallback prices** — dashboard shows prices from the first load
 - **✅ Automatic event discovery** — ClinicalTrials.gov + SEC EDGAR
 - **✅ PDUFA date extraction** — from SEC 8-K/6-K filings, Exhibit 99.1
-- **✅ 32 hand-curated events** — detailed drug descriptions & background
+- **✅ 32 hand-curated seed events** — detailed drug descriptions & background (1000+ scraped events from CT.gov on top)
 - **✅ Table + Timeline view** — sortable, filterable
 - **✅ Event detail modal** — drug name, mechanism, phase, trial, analysis
 - **✅ 5 Discord channels** — high-impact alerts, SEC filings, daily briefing, clinical updates, pharma news
@@ -139,11 +139,11 @@ docker run -p 8000:8000 -e DATABASE_URL="..." pharma-alert
 | Source | What it provides | Frequency |
 |---|---|---|
 | **Yahoo Finance** (`yfinance`) | Live stock prices, daily change % | Every 5 min |
-| **ClinicalTrials.gov** (API v2) | Phase 2/3 trial readouts | Every 24h |
 | **SEC EDGAR — PDUFA** (Atom feed) | PDUFA dates from 8-K/6-K Exhibit 99.1 | Every 60 min |
 | **SEC EDGAR — General** (Atom feed) | 8-K, 13D/13G, S-1/S-3 filings for tracked tickers | Every 30 min |
 | **RSS News Feeds** (feedparser) | Fierce Biotech, Fierce Pharma, GlobeNewswire Biotech | Every 15 min |
-| **Seed data** | 228 tickers + 32 hand-curated events | First startup only |
+| **ClinicalTrials.gov** (API v2) | 1000+ **scraped** Phase 2/3 trial events (source: `clinicaltrials_gov`) | Every 24h |
+| **Seed data** | 228 tickers + 32 **hand-curated** events with detailed drug backgrounds (source: `manual`) | First startup only |
 
 ---
 
