@@ -29,11 +29,12 @@ _FALLBACK_PRICES: dict[str, float] = {
 
 
 def seed_snapshots():
-    """Fill PriceSnapshot for ALL tickers (not just the hardcoded 31).
+    """Fill PriceSnapshot for ALL tickers.
 
-    New tickers added via the API (bulk import) get a null entry so they
-    appear on the dashboard immediately.  Live prices fill in as yfinance
-    data arrives on subsequent 5-minute cycles.
+    Known tickers (31) get their real fallback price; the rest get $50.00
+    as a placeholder so every row shows a number on the dashboard from
+    the very first load.  Live prices fill in as yfinance data arrives
+    on subsequent 5-minute cycles.
     """
     db = SessionLocal()
     try:
@@ -47,7 +48,7 @@ def seed_snapshots():
 
         for t in ticker_rows:
             if t.ticker not in existing_tickers:
-                fallback = _FALLBACK_PRICES.get(t.ticker)
+                fallback = _FALLBACK_PRICES.get(t.ticker, 50.0)  # $50 default for unknown tickers
                 db.add(PriceSnapshot(
                     ticker=t.ticker,
                     price=fallback,
