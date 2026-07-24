@@ -133,7 +133,7 @@ _FALLBACK_PRICES: dict[str, float] = {
     "NRXP": 3.87,
     "NTLA": 10.95,
     "NVAX": 7.53,
-    "OCEA": 0.0,
+    "OCEA": 0.0004,
     "OCGN": 1.24,
     "OCUL": 8.62,
     "OLMA": 11.77,
