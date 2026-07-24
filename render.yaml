@@ -27,6 +27,16 @@ services:
         sync: false
       - key: DISCORD_WEBHOOK_URL
         sync: false
+      - key: DISCORD_WEBHOOK_HIGH_IMPACT
+        sync: false
+      - key: DISCORD_WEBHOOK_SEC_LIVE
+        sync: false
+      - key: DISCORD_WEBHOOK_BRIEFING
+        sync: false
+      - key: DISCORD_WEBHOOK_CLINICAL
+        sync: false
+      - key: DISCORD_WEBHOOK_NEWS
+        sync: false
 
       # ── App settings ──
       - key: ALERT_DAYS_BEFORE
@@ -34,4 +44,6 @@ services:
       - key: REFRESH_INTERVAL_HOURS
         value: "6"
       - key: BASE_URL
-        value: https://pharma-alert.onrender.com
+        value: https://pharma-edge.onrender.com
+      - key: TIMEZONE
+        value: America/New_York

@@ -2,6 +2,8 @@
 
 import datetime
 import logging
+import time
+from collections import defaultdict
 from contextlib import asynccontextmanager
 
 # Only show WARNING+ from third-party libraries; our app messages stay INFO
@@ -61,6 +63,29 @@ app = FastAPI(
 # Templates
 templates = Jinja2Templates(directory="app/templates")
 
+# ── Basic rate limiter (in-memory, per IP) ──
+_RATE_LIMIT_WINDOW = 60  # seconds
+_RATE_LIMIT_MAX = 30     # requests per window for mutating endpoints
+_rate_store: dict[str, list[float]] = defaultdict(list)
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    # Only rate-limit mutating endpoints (POST, DELETE)
+    if request.method in ("POST", "DELETE") and request.url.path.startswith("/api/"):
+        client_ip = request.client.host if request.client else "unknown"
+        now = time.time()
+        window_start = now - _RATE_LIMIT_WINDOW
+        # Prune old entries and count current window
+        _rate_store[client_ip] = [t for t in _rate_store[client_ip] if t > window_start]
+        if len(_rate_store[client_ip]) >= _RATE_LIMIT_MAX:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Too many requests. Please slow down."},
+            )
+        _rate_store[client_ip].append(now)
+    return await call_next(request)
+
 # API routes
 app.include_router(dashboard.router)
 app.include_router(tickers.router)
@@ -79,7 +104,20 @@ def index(request: Request):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "timestamp": datetime.datetime.utcnow().isoformat()}
+    from sqlalchemy import text
+    try:
+        from app.models.database import SessionLocal
+        db = SessionLocal()
+        db.execute(text("SELECT 1"))
+        db.close()
+        db_ok = True
+    except Exception:
+        db_ok = False
+    return {
+        "status": "ok" if db_ok else "degraded",
+        "database": "connected" if db_ok else "unreachable",
+        "timestamp": datetime.datetime.utcnow().isoformat(),
+    }
 
 
 # ── Favicon ──────────────────────────────────────────────────────────────────
