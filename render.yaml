@@ -1,0 +1,37 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+# Deploy with: render blueprint apply (or via Render Dashboard → Blueprint)
+
+services:
+  - type: web
+    name: pharma-alert
+    env: python
+    region: oregon  # us-east, oregon, frankfurt, singapore, etc.
+    plan: free      # MVP — upgrade to starter/pro as needed
+
+    buildCommand: |
+      pip install --no-cache-dir -r requirements.txt
+
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+
+    healthCheckPath: /health
+
+    envVars:
+      # ── Required: PostgreSQL connection string ──
+      - key: DATABASE_URL
+        sync: false  # mark as "secret" — typed manually in Dashboard
+
+      # ── Optional: notification channels ──
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: DISCORD_WEBHOOK_URL
+        sync: false
+
+      # ── App settings ──
+      - key: ALERT_DAYS_BEFORE
+        value: "7"
+      - key: REFRESH_INTERVAL_HOURS
+        value: "6"
+      - key: BASE_URL
+        value: https://pharma-alert.onrender.com

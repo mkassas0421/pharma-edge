@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pharma Catalyst Alert System</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            pharma: { 50: '#ecfdf5', 100: '#d1fae5', 500: '#10b981', 600: '#059669', 700: '#047857' },
+          },
+          animation: { 'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite' }
+        }
+      }
+    }
+  </script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #1f2937; }
+    ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+
+    /* Skeleton shimmer */
+    @keyframes shimmer { 0% { background-position: -200px 0; } 100% { background-position: 200px 0; } }
+    .skeleton {
+      background: linear-gradient(90deg, #1f2937 25%, #374151 50%, #1f2937 75%);
+      background-size: 400px 100%;
+      animation: shimmer 1.5s ease-in-out infinite;
+      border-radius: 0.375rem;
+    }
+
+    /* Toast */
+    .toast {
+      transition: transform 0.3s ease, opacity 0.3s ease;
+    }
+    .toast.hidden {
+      transform: translateY(1rem);
+      opacity: 0;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body class="bg-gray-950 text-gray-100 font-sans antialiased">
+
+  <!-- ── Toast Container ── -->
+  <div id="toast-container" class="fixed top-4 right-4 z-[100] flex flex-col gap-2"></div>
+
+  <!-- ── Navigation ── -->
+  <nav class="border-b border-gray-800 bg-gray-900/80 backdrop-blur-sm sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-400 to-cyan-400 flex items-center justify-center">
+            <i class="fa-solid fa-flask text-gray-950 text-sm"></i>
+          </div>
+          <span class="font-bold text-lg">Pharma Catalyst</span>
+          <span class="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">ALPHA</span>
+          <!-- View switcher -->
+          <div class="ml-6 flex items-center gap-1 bg-gray-800 rounded-lg p-0.5 text-sm" id="view-switcher">
+            <button data-view="table" class="px-3 py-1.5 rounded-md bg-emerald-600 text-white transition-all">
+              <i class="fa-solid fa-table-cells mr-1"></i>Table
+            </button>
+            <button data-view="timeline" class="px-3 py-1.5 rounded-md text-gray-400 hover:text-white transition-all">
+              <i class="fa-solid fa-timeline mr-1"></i>Timeline
+            </button>
+          </div>
+        </div>
+        <div class="flex items-center gap-3 text-sm text-gray-400">
+          <span id="last-updated">—</span>
+          <button onclick="refreshDashboard()" class="hover:text-emerald-400 transition-colors" title="Refresh now">
+            <i class="fa-solid fa-rotate"></i>
+          </button>
+          <div class="h-4 w-px bg-gray-700"></div>
+          <button id="notify-status-btn" onclick="testNotification()" class="flex items-center gap-1.5 hover:text-emerald-400 transition-colors text-xs" title="Test notification">
+            <i id="notify-icon" class="fa-solid fa-bell-slash text-gray-600"></i>
+            <span id="notify-label" class="hidden sm:inline">Notify</span>
+          </button>
+          <!-- Read-only mode: ticker management removed -->
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ── Alert Banner (hidden by default) ── -->
+  <div id="alert-banner" class="hidden bg-rose-900/40 border-b border-rose-800/60 backdrop-blur-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3">
+      <i class="fa-solid fa-bell text-rose-400 animate-pulse-slow"></i>
+      <span class="text-sm font-medium text-rose-200">
+        <span id="alert-count">0</span> event(s) within <span id="alert-window">7</span> days — alerts active
+      </span>
+    </div>
+  </div>
+
+  <!-- ── Main ── -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+    <!-- ── Stats Cards ── -->
+    <section class="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-8" id="stats-cards">
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 flex items-center gap-4">
+        <div class="w-12 h-12 rounded-lg bg-blue-500/10 text-blue-400 flex items-center justify-center text-xl">
+          <i class="fa-solid fa-chart-line"></i>
+        </div>
+        <div>
+          <p class="text-xs text-gray-500 uppercase tracking-wider">Tracked</p>
+          <p class="text-2xl font-bold stat-value" data-stat="total">—</p>
+        </div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 flex items-center gap-4">
+        <div class="w-12 h-12 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center text-xl">
+          <i class="fa-solid fa-calendar-check"></i>
+        </div>
+        <div>
+          <p class="text-xs text-gray-500 uppercase tracking-wider">Upcoming</p>
+          <p class="text-2xl font-bold stat-value" data-stat="upcoming">—</p>
+        </div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 flex items-center gap-4">
+        <div class="w-12 h-12 rounded-lg bg-rose-500/10 text-rose-400 flex items-center justify-center text-xl">
+          <i class="fa-solid fa-bell"></i>
+        </div>
+        <div>
+          <p class="text-xs text-gray-500 uppercase tracking-wider">Alerting (7d)</p>
+          <p class="text-2xl font-bold stat-value" data-stat="alerting">—</p>
+        </div>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 flex items-center gap-4">
+        <div class="w-12 h-12 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-xl">
+          <i class="fa-solid fa-rocket"></i>
+        </div>
+        <div>
+          <p class="text-xs text-gray-500 uppercase tracking-wider">High Impact</p>
+          <p class="text-2xl font-bold stat-value" data-stat="high-impact">—</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TABLE VIEW ==================== -->
+    <section id="view-table" class="space-y-4">
+      <!-- Filter bar -->
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="relative flex-1 max-w-xs">
+          <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm"></i>
+          <input type="text" id="table-filter" placeholder="Filter by ticker or company..."
+                 class="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-colors">
+        </div>
+        <select id="impact-filter" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-emerald-500">
+          <option value="all">All Impact Levels</option>
+          <option value="High">High</option>
+          <option value="Medium">Medium</option>
+          <option value="Low">Low</option>
+        </select>
+        <select id="event-type-filter" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-emerald-500">
+          <option value="all">All Event Types</option>
+          <option value="PDUFA">PDUFA</option>
+          <option value="PHASE3_READOUT">Phase 3</option>
+          <option value="PHASE2_READOUT">Phase 2</option>
+          <option value="PHASE1_READOUT">Phase 1</option>
+          <option value="REGULATORY">Regulatory</option>
+        </select>
+      </div>
+
+      <!-- Table -->
+      <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-gray-800 bg-gray-950/50">
+                <th class="text-left px-5 py-3.5 text-xs text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-300 select-none" onclick="sortTable('ticker')" data-sort="ticker">
+                  Ticker <i class="fa-solid fa-sort ml-1 text-gray-700 sort-icon"></i>
+                </th>
+                <th class="text-left px-5 py-3.5 text-xs text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-300 select-none" onclick="sortTable('company_name')" data-sort="company_name">
+                  Company <i class="fa-solid fa-sort ml-1 text-gray-700 sort-icon"></i>
+                </th>
+                <th class="text-right px-5 py-3.5 text-xs text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-300 select-none" onclick="sortTable('current_price')" data-sort="current_price">
+                  Price <i class="fa-solid fa-sort ml-1 text-gray-700 sort-icon"></i>
+                </th>
+                <th class="text-right px-5 py-3.5 text-xs text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-300 select-none" onclick="sortTable('price_change_pct')" data-sort="price_change_pct">
+                  Change <i class="fa-solid fa-sort ml-1 text-gray-700 sort-icon"></i>
+                </th>
+                <th class="text-left px-5 py-3.5 text-xs text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-300 select-none" onclick="sortTable('next_event_title')" data-sort="next_event_title">
+                  Next Catalyst <i class="fa-solid fa-sort ml-1 text-gray-700 sort-icon"></i>
+                </th>
+                <th class="text-center px-5 py-3.5 text-xs text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-300 select-none" onclick="sortTable('next_event_date')" data-sort="next_event_date">
+                  Date <i class="fa-solid fa-sort ml-1 text-gray-700 sort-icon"></i>
+                </th>
+                <th class="text-center px-5 py-3.5 text-xs text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-300 select-none" onclick="sortTable('impact_level')" data-sort="impact_level">
+                  Impact <i class="fa-solid fa-sort ml-1 text-gray-700 sort-icon"></i>
+                </th>
+                <th class="text-center px-5 py-3.5 text-xs text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-300 select-none" onclick="sortTable('days_until_event')" data-sort="days_until_event">
+                  Countdown <i class="fa-solid fa-sort ml-1 text-gray-700 sort-icon"></i>
+                </th>
+              </tr>
+            </thead>
+            <tbody id="dashboard-body">
+              <!-- Loading state (replaced by JS) -->
+              <tr>
+                <td colspan="8" class="text-center py-12 text-gray-500">
+                  <i class="fa-solid fa-spinner fa-spin text-xl"></i>
+                  <p class="mt-2">Loading dashboard data...</p>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="table-empty" class="hidden py-16 text-center">
+          <i class="fa-solid fa-search text-4xl text-gray-700 mb-3"></i>
+          <p class="text-gray-500">No tickers match your filters.</p>
+          <button onclick="clearFilters()" class="text-emerald-500 hover:text-emerald-400 text-sm mt-2">Clear filters</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TIMELINE VIEW ==================== -->
+    <section id="view-timeline" class="hidden space-y-4">
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-6" id="timeline-container">
+        <h3 class="text-lg font-semibold mb-6 flex items-center gap-2">
+          <i class="fa-solid fa-timeline text-emerald-400"></i>
+          Upcoming Catalyst Timeline
+        </h3>
+        <div id="timeline-body">
+          <div class="text-center py-12 text-gray-500">
+            <i class="fa-solid fa-spinner fa-spin text-xl"></i>
+            <p class="mt-2">Loading timeline...</p>
+          </div>
+        </div>
+        <div id="timeline-empty" class="hidden py-16 text-center">
+          <i class="fa-solid fa-calendar-xmark text-4xl text-gray-700 mb-3"></i>
+          <p class="text-gray-500">No upcoming events found.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Footer Legend ── -->
+    <div class="mt-6 flex flex-wrap items-center gap-4 text-xs text-gray-500">
+      <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500"></span> High Impact</span>
+      <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-full bg-amber-500"></span> Medium Impact</span>
+      <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-full bg-gray-500"></span> Low Impact</span>
+      <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse-slow"></span> Alerting (≤7d)</span>
+    </div>
+  </main>
+
+  <!-- ════════════════════════════════════════════════════════ -->
+  <!-- MODALS                                                -->
+  <!-- ════════════════════════════════════════════════════════ -->
+
+  <!-- ── Add Ticker Modal ── -->
+  <div id="add-ticker-modal" class="fixed inset-0 z-[60] hidden items-center justify-center bg-black/60 backdrop-blur-sm">
+    <div class="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md mx-4 p-6 shadow-2xl">
+      <div class="flex items-center justify-between mb-5">
+        <h3 class="text-lg font-semibold">Add Ticker</h3>
+        <button onclick="closeModal('add-ticker-modal')" class="text-gray-500 hover:text-white transition-colors"><i class="fa-solid fa-xmark text-xl"></i></button>
+      </div>
+      <form id="add-ticker-form" class="space-y-4" onsubmit="submitTicker(event)">
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">Ticker Symbol</label>
+          <input name="ticker" required maxlength="10" placeholder="e.g. SNY" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-emerald-500 uppercase">
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">Company Name</label>
+          <input name="company_name" required maxlength="200" placeholder="e.g. Sanofi S.A." class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-emerald-500">
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">Sector</label>
+          <select name="sector" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-emerald-500">
+            <option>Large-cap Biotech</option>
+            <option>Mid-cap Biotech</option>
+            <option>Micro-cap Pharma</option>
+            <option>Pharma Services</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">Notes <span class="text-gray-600">(optional)</span></label>
+          <input name="notes" placeholder="Why you're tracking this..." class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-emerald-500">
+        </div>
+        <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg py-2.5 text-sm font-medium transition-colors">
+          <i class="fa-solid fa-plus mr-1"></i>Add Ticker
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── Add Event Modal ── -->
+  <div id="add-event-modal" class="fixed inset-0 z-[60] hidden items-center justify-center bg-black/60 backdrop-blur-sm">
+    <div class="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-lg mx-4 p-6 shadow-2xl">
+      <div class="flex items-center justify-between mb-5">
+        <h3 class="text-lg font-semibold">Add Catalyst Event</h3>
+        <button onclick="closeModal('add-event-modal')" class="text-gray-500 hover:text-white transition-colors"><i class="fa-solid fa-xmark text-xl"></i></button>
+      </div>
+      <form id="add-event-form" class="space-y-4" onsubmit="submitEvent(event)">
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">Ticker</label>
+            <select name="ticker" id="event-ticker-select" required class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-emerald-500"></select>
+          </div>
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">Event Type</label>
+            <select name="event_type" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-emerald-500">
+              <option value="PDUFA">PDUFA (FDA Decision)</option>
+              <option value="PHASE3_READOUT">Phase 3 Readout</option>
+              <option value="PHASE2_READOUT">Phase 2 Readout</option>
+              <option value="PHASE1_READOUT">Phase 1 Readout</option>
+              <option value="REGULATORY">Regulatory Filing</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">Event Title</label>
+          <input name="title" required maxlength="300" placeholder="e.g. PDUFA date for Alzheimer's drug" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-emerald-500">
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">Event Date</label>
+            <input name="event_date" type="date" required class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-emerald-500">
+          </div>
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">Impact Level</label>
+            <select name="impact_level" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-emerald-500">
+              <option value="High">High</option>
+              <option value="Medium">Medium</option>
+              <option value="Low">Low</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">Description <span class="text-gray-600">(optional)</span></label>
+          <textarea name="description" rows="2" placeholder="Details about this catalyst..." class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-emerald-500 resize-none"></textarea>
+        </div>
+        <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg py-2.5 text-sm font-medium transition-colors">
+          <i class="fa-solid fa-plus mr-1"></i>Add Event
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── Delete Confirm Modal ── -->
+  <div id="delete-modal" class="fixed inset-0 z-[60] hidden items-center justify-center bg-black/60 backdrop-blur-sm">
+    <div class="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-sm mx-4 p-6 shadow-2xl text-center">
+      <div class="w-14 h-14 mx-auto mb-4 rounded-full bg-rose-500/10 text-rose-400 flex items-center justify-center text-2xl">
+        <i class="fa-solid fa-trash-can"></i>
+      </div>
+      <h3 class="text-lg font-semibold mb-2">Delete Ticker?</h3>
+      <p class="text-sm text-gray-400 mb-6">
+        This will remove <span id="delete-ticker-name" class="text-white font-mono"></span> and all its events.
+      </p>
+      <div class="flex gap-3">
+        <button onclick="closeModal('delete-modal')" class="flex-1 bg-gray-800 hover:bg-gray-700 rounded-lg py-2.5 text-sm transition-colors">Cancel</button>
+        <button id="delete-confirm-btn" class="flex-1 bg-rose-600 hover:bg-rose-500 text-white rounded-lg py-2.5 text-sm transition-colors">
+          <i class="fa-solid fa-trash-can mr-1"></i>Delete
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Event Detail Modal ── -->
+  <div id="event-detail-modal" class="fixed inset-0 z-[60] hidden items-center justify-center bg-black/70 backdrop-blur-sm" onclick="if(event.target===this)closeModal('event-detail-modal')">
+    <div class="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-2xl mx-4 max-h-[85vh] overflow-y-auto shadow-2xl">
+      <!-- Header -->
+      <div class="sticky top-0 bg-gray-900 border-b border-gray-800 px-6 py-4 flex items-center justify-between rounded-t-2xl z-10">
+        <div class="flex items-center gap-3 min-w-0">
+          <span id="detail-ticker-badge" class="font-bold font-mono text-lg text-white"></span>
+          <span id="detail-type-badge"></span>
+          <span id="detail-impact-badge"></span>
+        </div>
+        <button onclick="closeModal('event-detail-modal')" class="text-gray-500 hover:text-white transition-colors shrink-0 ml-3">
+          <i class="fa-solid fa-xmark text-xl"></i>
+        </button>
+      </div>
+      <!-- Body -->
+      <div class="px-6 py-5 space-y-5">
+        <!-- Title -->
+        <div>
+          <h2 id="detail-title" class="text-lg font-semibold text-white leading-snug"></h2>
+          <div class="flex items-center gap-3 mt-2 text-sm text-gray-400">
+            <span id="detail-company" class="text-gray-300"></span>
+            <span class="text-gray-600">|</span>
+            <span id="detail-date"></span>
+            <span class="text-gray-600">|</span>
+            <span id="detail-countdown" class="font-mono"></span>
+          </div>
+        </div>
+        <!-- Drug summary cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" id="detail-cards">
+          <div class="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
+            <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Drug</p>
+            <p id="detail-drug" class="text-sm text-gray-200 font-medium"></p>
+          </div>
+          <div class="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
+            <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Mechanism</p>
+            <p id="detail-mechanism" class="text-sm text-gray-200"></p>
+          </div>
+          <div class="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
+            <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Trial Phase</p>
+            <p id="detail-phase" class="text-sm text-gray-200 font-mono"></p>
+          </div>
+          <div class="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
+            <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Trial Name</p>
+            <p id="detail-trial" class="text-sm text-gray-200"></p>
+          </div>
+        </div>
+        <!-- Milestone -->
+        <div class="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4">
+          <p class="text-xs text-amber-400 uppercase tracking-wider mb-1">🎯 Milestone</p>
+          <p id="detail-milestone" class="text-sm text-gray-200"></p>
+        </div>
+        <!-- Background -->
+        <div>
+          <p class="text-xs text-gray-500 uppercase tracking-wider mb-2">Background & Analysis</p>
+          <p id="detail-background" class="text-sm text-gray-300 leading-relaxed"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════ -->
+  <!-- JAVASCRIPT                                            -->
+  <!-- ════════════════════════════════════════════════════════ -->
+  <script>
+    // ── State ──
+    let dashboardData = [];
+    let tickerList = [];
+    let sortKey = null;
+    let sortAsc = true;
+    let deleteTarget = null;
+
+    // ── Toast ──
+    function showToast(message, type = 'success') {
+      const colors = { success: 'bg-emerald-700 border-emerald-600', error: 'bg-rose-700 border-rose-600', info: 'bg-blue-700 border-blue-600' };
+      const icons = { success: 'fa-circle-check', error: 'fa-circle-xmark', info: 'fa-circle-info' };
+      const container = document.getElementById('toast-container');
+      const el = document.createElement('div');
+      el.className = `toast flex items-center gap-3 px-4 py-3 rounded-lg border ${colors[type] || colors.info} shadow-lg min-w-[280px]`;
+      el.innerHTML = `<i class="fa-solid ${icons[type] || icons.info}"></i><span class="text-sm">${message}</span>`;
+      container.appendChild(el);
+      setTimeout(() => { el.classList.add('hidden'); setTimeout(() => el.remove(), 300); }, 3500);
+    }
+
+    // ── Modals ──
+    function openModal(id) { document.getElementById(id).classList.remove('hidden'); document.getElementById(id).classList.add('flex'); }
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); document.getElementById(id).classList.remove('flex'); }
+    function openAddTickerModal() { openModal('add-ticker-modal'); }
+    function openAddEventModal() { openModal('add-event-modal'); refreshTickerSelect(); }
+
+    async function refreshTickerSelect() {
+      try {
+        const r = await fetch('/api/tickers');
+        const data = await r.json();
+        const sel = document.getElementById('event-ticker-select');
+        sel.innerHTML = data.map(t => `<option value="${t.ticker}">${t.ticker} — ${t.company_name}</option>`).join('');
+      } catch (_) {}
+    }
+
+    // ── View Switcher ──
+    document.getElementById('view-switcher').addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      const view = btn.dataset.view;
+      document.querySelectorAll('#view-switcher button').forEach(b => {
+        b.classList.remove('bg-emerald-600', 'text-white');
+        b.classList.add('text-gray-400');
+      });
+      btn.classList.add('bg-emerald-600', 'text-white');
+      btn.classList.remove('text-gray-400');
+      document.getElementById('view-table').classList.toggle('hidden', view !== 'table');
+      document.getElementById('view-timeline').classList.toggle('hidden', view !== 'timeline');
+      // Render timeline content when switching to it
+      if (view === 'timeline') renderTimeline();
+    });
+
+    // ── Formatting ──
+    function impactBadge(level) {
+      const map = {
+        High: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+        Medium: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+        Low: 'bg-gray-500/15 text-gray-400 border-gray-500/30',
+      };
+      return `<span class="px-2.5 py-0.5 rounded-full text-xs font-medium border ${map[level] || map.Low}">${level || '—'}</span>`;
+    }
+
+    function daysBadge(days) {
+      if (days === null || days === undefined) return '<span class="text-gray-600">—</span>';
+      if (days < 0) return '<span class="text-gray-500">Past</span>';
+      if (days === 0) return '<span class="text-rose-400 font-bold animate-pulse">Today!</span>';
+      if (days <= 7) return `<span class="text-rose-400 font-bold">${days}d</span>`;
+      if (days <= 30) return `<span class="text-amber-400">${days}d</span>`;
+      return `<span class="text-gray-400">${days}d</span>`;
+    }
+
+    function formatDate(iso) {
+      if (!iso) return '—';
+      return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+
+    function formatPrice(p) {
+      if (p === null || p === undefined) return '<span class="text-gray-600">—</span>';
+      return `$${p.toFixed(2)}`;
+    }
+
+    function formatChange(pct) {
+      if (pct === null || pct === undefined) return '<span class="text-gray-600">—</span>';
+      const cls = pct >= 0 ? 'text-emerald-400' : 'text-rose-400';
+      const icon = pct >= 0 ? 'fa-caret-up' : 'fa-caret-down';
+      return `<span class="${cls}"><i class="fa-solid ${icon} mr-0.5"></i>${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%</span>`;
+    }
+
+    function eventTypeBadge(type) {
+      const labels = { PDUFA: 'PDUFA', PHASE3_READOUT: 'Ph3', PHASE2_READOUT: 'Ph2', PHASE1_READOUT: 'Ph1', REGULATORY: 'Reg.' };
+      const colors = { PDUFA: 'text-sky-400 border-sky-500/30 bg-sky-500/10', PHASE3_READOUT: 'text-violet-400 border-violet-500/30 bg-violet-500/10', PHASE2_READOUT: 'text-amber-400 border-amber-500/30 bg-amber-500/10', PHASE1_READOUT: 'text-gray-400 border-gray-500/30 bg-gray-500/10', REGULATORY: 'text-cyan-400 border-cyan-500/30 bg-cyan-500/10' };
+      const c = colors[type] || 'text-gray-400 border-gray-500/30 bg-gray-500/10';
+      return `<span class="px-2 py-0.5 rounded text-xs font-mono border ${c}">${labels[type] || type}</span>`;
+    }
+
+    // ── Filtering ──
+    function getFilteredData() {
+      const q = document.getElementById('table-filter').value.toLowerCase();
+      const impact = document.getElementById('impact-filter').value;
+      const etype = document.getElementById('event-type-filter').value;
+      return dashboardData.filter(r => {
+        if (q && !r.ticker.toLowerCase().includes(q) && !r.company_name.toLowerCase().includes(q)) return false;
+        if (impact !== 'all' && r.impact_level !== impact) return false;
+        if (etype !== 'all' && r.next_event_type !== etype) return false;
+        return true;
+      });
+    }
+
+    document.getElementById('table-filter').addEventListener('input', renderTable);
+    document.getElementById('impact-filter').addEventListener('change', renderTable);
+    document.getElementById('event-type-filter').addEventListener('change', renderTable);
+
+    function clearFilters() {
+      document.getElementById('table-filter').value = '';
+      document.getElementById('impact-filter').value = 'all';
+      document.getElementById('event-type-filter').value = 'all';
+      renderTable();
+    }
+
+    // ── Sorting ──
+    function sortTable(key) {
+      if (sortKey === key) {
+        sortAsc = !sortAsc;
+      } else {
+        sortKey = key;
+        sortAsc = true;
+      }
+      // Update sort icons
+      document.querySelectorAll('th[data-sort]').forEach(th => {
+        const icon = th.querySelector('.sort-icon');
+        if (!icon) return;
+        const field = th.dataset.sort;
+        if (field === key) {
+          icon.className = `fa-solid fa-sort-${sortAsc ? 'up' : 'down'} ml-1 sort-icon`;
+          th.classList.add('text-emerald-400');
+        } else {
+          icon.className = 'fa-solid fa-sort ml-1 text-gray-700 sort-icon';
+          th.classList.remove('text-emerald-400');
+        }
+      });
+      renderTable();
+    }
+
+    // ── Event Detail Modal ──
+    function openEventDetail(row) {
+      if (!row || !row.next_event_description) return;
+
+      const desc = row.next_event_description;
+      const lines = desc.split('\n');
+
+      // Parse structured fields from the description
+      let drug = '', mechanism = '', phase = '', trial = '', milestone = '', background = '';
+
+      // First pass: extract labeled fields
+      const labelMap = {
+        '💊 Drug:': (v) => { drug = v; },
+        '⚙️  Mechanism:': (v) => { mechanism = v; },
+        '🔬 Phase:': (v) => { phase = v; },
+        '📋 Trial:': (v) => { trial = v; },
+        '🎯 Milestone:': (v) => { milestone = v; },
+      };
+
+      let inBackground = false;
+      const bgLines = [];
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        let matched = false;
+        for (const [prefix, setter] of Object.entries(labelMap)) {
+          if (trimmed.startsWith(prefix)) {
+            setter(trimmed.slice(prefix.length).trim());
+            matched = true;
+            break;
+          }
+        }
+        if (matched) continue;
+
+        // Anything after the labels is background
+        bgLines.push(trimmed);
+      }
+      background = bgLines.join('\n\n');
+
+      // Populate modal
+      document.getElementById('detail-ticker-badge').textContent = row.ticker;
+      document.getElementById('detail-type-badge').innerHTML = eventTypeBadge(row.next_event_type);
+      document.getElementById('detail-impact-badge').innerHTML = impactBadge(row.impact_level);
+      document.getElementById('detail-title').textContent = row.next_event_title;
+      document.getElementById('detail-company').textContent = row.company_name;
+      document.getElementById('detail-date').textContent = formatDate(row.next_event_date);
+      document.getElementById('detail-countdown').textContent = row.days_until_event !== null
+        ? (row.days_until_event <= 0 ? 'Today!' : `${row.days_until_event} day(s) away`)
+        : '—';
+      document.getElementById('detail-drug').textContent = drug || '—';
+      document.getElementById('detail-mechanism').textContent = mechanism || '—';
+      document.getElementById('detail-phase').textContent = phase || '—';
+      document.getElementById('detail-trial').textContent = trial || '—';
+      document.getElementById('detail-milestone').textContent = milestone || row.next_event_title;
+      document.getElementById('detail-background').textContent = background || 'No background available.';
+
+      openModal('event-detail-modal');
+    }
+
+    // ── Render Table ──
+    function renderTable() {
+      const tbody = document.getElementById('dashboard-body');
+      const empty = document.getElementById('table-empty');
+      let rows = getFilteredData();
+
+      // Sort
+      if (sortKey) {
+        const numericKeys = new Set(['current_price', 'price_change_pct', 'days_until_event']);
+        const isNumeric = numericKeys.has(sortKey);
+
+        rows.sort((a, b) => {
+          let av = a[sortKey], bv = b[sortKey];
+
+          // Handle nulls — sort to the end regardless of asc/desc
+          if (av === null || av === undefined) return 1;
+          if (bv === null || bv === undefined) return -1;
+
+          if (isNumeric) {
+            return sortAsc ? (av - bv) : (bv - av);
+          }
+
+          // String comparison (case-insensitive)
+          av = String(av).toLowerCase();
+          bv = String(bv).toLowerCase();
+          if (av < bv) return sortAsc ? -1 : 1;
+          if (av > bv) return sortAsc ? 1 : -1;
+          return 0;
+        });
+      }
+
+      if (rows.length === 0) {
+        tbody.innerHTML = '';
+        empty.classList.remove('hidden');
+        return;
+      }
+      empty.classList.add('hidden');
+
+      tbody.innerHTML = rows.map(row => {
+        const isAlert = row.days_until_event !== null && row.days_until_event >= 0 && row.days_until_event <= 7;
+        return `
+          <tr class="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors ${isAlert ? 'bg-rose-900/10' : ''}">
+            <td class="px-5 py-4">
+              <div class="flex items-center gap-2">
+                <span class="font-bold text-white font-mono">${row.ticker}</span>
+                ${isAlert ? '<i class="fa-solid fa-bell text-rose-400 text-xs animate-pulse-slow" title="Alerting"></i>' : ''}
+              </div>
+            </td>
+            <td class="px-5 py-4 text-gray-300">${row.company_name}</td>
+            <td class="px-5 py-4 text-right font-mono tabular-nums">${formatPrice(row.current_price)}</td>
+            <td class="px-5 py-4 text-right">${formatChange(row.price_change_pct)}</td>
+            <td class="px-5 py-4">
+              <div class="flex items-center gap-2">
+                ${eventTypeBadge(row.next_event_type)}
+                <button onclick="openEventDetail(dashboardData.find(r=>r.ticker==='${row.ticker}'))"
+                        class="text-gray-200 truncate max-w-[220px] block text-left hover:text-emerald-400 transition-colors"
+                        ${!row.next_event_description ? 'disabled' : ''}>
+                  ${row.next_event_title || '—'}
+                </button>
+              </div>
+            </td>
+            <td class="px-5 py-4 text-center text-gray-300 whitespace-nowrap tabular-nums">${formatDate(row.next_event_date)}</td>
+            <td class="px-5 py-4 text-center">${impactBadge(row.impact_level)}</td>
+            <td class="px-5 py-4 text-center font-mono tabular-nums">${daysBadge(row.days_until_event)}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // ── Render Timeline ──
+    function renderTimeline() {
+      const container = document.getElementById('timeline-body');
+      const empty = document.getElementById('timeline-empty');
+      const upcoming = dashboardData.filter(r => r.next_event_date).sort((a, b) => new Date(a.next_event_date) - new Date(b.next_event_date));
+
+      if (upcoming.length === 0) {
+        container.innerHTML = '';
+        empty.classList.remove('hidden');
+        return;
+      }
+      empty.classList.add('hidden');
+
+      // Group by month
+      const byMonth = {};
+      upcoming.forEach(r => {
+        const d = new Date(r.next_event_date);
+        const key = d.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
+        if (!byMonth[key]) byMonth[key] = [];
+        byMonth[key].push(r);
+      });
+
+      container.innerHTML = Object.entries(byMonth).map(([month, events]) => `
+        <div class="mb-8 last:mb-0">
+          <div class="flex items-center gap-3 mb-4">
+            <div class="h-px flex-1 bg-gray-800"></div>
+            <span class="text-xs text-gray-500 font-medium tracking-wider uppercase">${month}</span>
+            <div class="h-px flex-1 bg-gray-800"></div>
+          </div>
+          <div class="space-y-3">
+            ${events.map(ev => {
+              const d = new Date(ev.next_event_date);
+              const day = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+              const isAlert = ev.days_until_event !== null && ev.days_until_event >= 0 && ev.days_until_event <= 7;
+              return `
+                <button onclick="openEventDetail(dashboardData.find(r=>r.ticker==='${ev.ticker}'))"
+                        class="w-full text-left flex items-start gap-4 p-4 rounded-xl border ${isAlert ? 'border-rose-800/40 bg-rose-900/10' : 'border-gray-800 bg-gray-800/30'} hover:bg-gray-700/50 transition-colors ${!ev.next_event_description ? 'cursor-default' : ''}">
+                  <div class="flex flex-col items-center min-w-[60px]">
+                    <span class="text-sm font-bold ${isAlert ? 'text-rose-400' : 'text-emerald-400'}">${d.getDate()}</span>
+                    <span class="text-xs text-gray-500">${d.toLocaleDateString('en-US', { month: 'short' })}</span>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 mb-1">
+                      <span class="font-bold font-mono text-white text-sm">${ev.ticker}</span>
+                      ${eventTypeBadge(ev.next_event_type)}
+                      ${impactBadge(ev.impact_level)}
+                    </div>
+                    <p class="text-sm text-gray-200 truncate">${ev.next_event_title}</p>
+                    <p class="text-xs text-gray-500 mt-1">${ev.company_name}</p>
+                  </div>
+                  <div class="text-right min-w-[60px] shrink-0">
+                    <div class="font-mono text-sm ${isAlert ? 'text-rose-400 font-bold' : 'text-gray-300'}">${daysBadge(ev.days_until_event)}</div>
+                    <div class="text-xs text-gray-500 mt-0.5">away</div>
+                  </div>
+                </button>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // ── Delete Ticker ──
+    function confirmDelete(ticker) {
+      deleteTarget = ticker;
+      document.getElementById('delete-ticker-name').textContent = ticker;
+      openModal('delete-modal');
+    }
+
+    document.getElementById('delete-confirm-btn').addEventListener('click', async () => {
+      if (!deleteTarget) return;
+      try {
+        const r = await fetch(`/api/tickers/${deleteTarget}`, { method: 'DELETE' });
+        if (!r.ok && r.status !== 204) throw new Error('Delete failed');
+        showToast(`Deleted ${deleteTarget}`);
+        closeModal('delete-modal');
+        deleteTarget = null;
+        refreshDashboard();
+      } catch (e) {
+        showToast(`Failed to delete: ${e.message}`, 'error');
+      }
+    });
+
+    // ── Submit Ticker ──
+    async function submitTicker(e) {
+      e.preventDefault();
+      const form = e.target;
+      const data = Object.fromEntries(new FormData(form));
+      try {
+        const r = await fetch('/api/tickers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+        if (!r.ok) {
+          const err = await r.json();
+          throw new Error(err.detail || 'Failed to add ticker');
+        }
+        showToast(`Added ${data.ticker.toUpperCase()}`);
+        closeModal('add-ticker-modal');
+        form.reset();
+        refreshDashboard();
+      } catch (e) {
+        showToast(e.message, 'error');
+      }
+    }
+
+    // ── Submit Event ──
+    async function submitEvent(e) {
+      e.preventDefault();
+      const form = e.target;
+      const data = Object.fromEntries(new FormData(form));
+      // Convert date-only to full datetime
+      data.event_date = new Date(data.event_date + 'T12:00:00').toISOString();
+      try {
+        const r = await fetch('/api/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+        if (!r.ok) {
+          const err = await r.json();
+          throw new Error(err.detail || 'Failed to add event');
+        }
+        showToast(`Event added for ${data.ticker}`);
+        closeModal('add-event-modal');
+        form.reset();
+        refreshDashboard();
+      } catch (e) {
+        showToast(e.message, 'error');
+      }
+    }
+
+    // ── Notification test ──
+    async function testNotification() {
+      const icon = document.getElementById('notify-icon');
+      icon.className = 'fa-solid fa-spinner fa-spin text-amber-400';
+      try {
+        const r = await fetch('/api/test-notify?ticker=VRTX&days=5', { method: 'POST' });
+        if (r.ok) {
+          showToast('Test notification sent!', 'success');
+          icon.className = 'fa-solid fa-circle-check text-emerald-400';
+        } else {
+          const err = await r.json();
+          showToast(err.detail || 'Notification failed', 'error');
+          icon.className = 'fa-solid fa-bell-slash text-rose-400';
+        }
+      } catch (e) {
+        showToast('Network error', 'error');
+        icon.className = 'fa-solid fa-bell-slash text-gray-600';
+      }
+    }
+
+    async function checkNotifyStatus() {
+      try {
+        const r = await fetch('/api/notify-status');
+        const s = await r.json();
+        const icon = document.getElementById('notify-icon');
+        const label = document.getElementById('notify-label');
+        if (s.telegram || s.discord) {
+          icon.className = 'fa-solid fa-bell text-emerald-400';
+          if (label) label.textContent = s.telegram ? 'Telegram' : 'Discord';
+          document.getElementById('notify-status-btn').title = 'Send test notification';
+        } else {
+          icon.className = 'fa-solid fa-bell-slash text-gray-600';
+          if (label) label.textContent = 'Notify';
+          document.getElementById('notify-status-btn').title = 'Notifications not configured. Set in .env';
+        }
+      } catch (_) {}
+    }
+
+    // ── Main Refresh ──
+    async function refreshDashboard() {
+      try {
+        const [dashRes, statsRes] = await Promise.all([
+          fetch('/api/dashboard'),
+          fetch('/api/dashboard/stats'),
+        ]);
+        const dash = await dashRes.json();
+        const stats = await statsRes.json();
+
+        dashboardData = dash.rows || [];
+
+        // Stats
+        document.querySelector('[data-stat="total"]').textContent = stats.total_tickers;
+        document.querySelector('[data-stat="upcoming"]').textContent = stats.upcoming_events;
+        document.querySelector('[data-stat="alerting"]').textContent = stats.alerting_events;
+        document.querySelector('[data-stat="high-impact"]').textContent = (dash.rows || []).filter(r => r.impact_level === 'High').length;
+
+        // Timestamp
+        document.getElementById('last-updated').textContent =
+          `Updated ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
+
+        // Alert banner
+        const banner = document.getElementById('alert-banner');
+        if (stats.alerting_events > 0) {
+          banner.classList.remove('hidden');
+          document.getElementById('alert-count').textContent = stats.alerting_events;
+        } else {
+          banner.classList.add('hidden');
+        }
+
+        // Fetch ticker list for modals
+        const tickRes = await fetch('/api/tickers');
+        tickerList = await tickRes.json();
+
+        renderTable();
+        if (!document.getElementById('view-timeline').classList.contains('hidden')) {
+          renderTimeline();
+        }
+      } catch (err) {
+        console.error('Dashboard load error:', err);
+        document.getElementById('dashboard-body').innerHTML = `
+          <tr><td colspan="9" class="text-center py-12 text-rose-400">
+            <i class="fa-solid fa-exclamation-triangle text-2xl"></i>
+            <p class="mt-2">Failed to load dashboard. Is the server running?</p>
+            <button onclick="refreshDashboard()" class="mt-3 text-emerald-400 hover:text-emerald-300 text-sm">Retry <i class="fa-solid fa-rotate ml-1"></i></button>
+          </td></tr>
+        `;
+      }
+    }
+
+    // ── Init ──
+    document.addEventListener('DOMContentLoaded', () => {
+      refreshDashboard();
+      checkNotifyStatus();
+    });
+    // Auto-refresh every 5 min
+    setInterval(refreshDashboard, 5 * 60 * 1000);
+  </script>
+</body>
+</html>
