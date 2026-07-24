@@ -132,9 +132,12 @@ def test_notification(
 
 @router.get("/notify-status")
 def notify_status():
-    """Return whether Telegram and/or Discord notification channels are configured."""
+    """Return which notification channels are configured."""
     return {
         "telegram": bool(settings.telegram_bot_token and settings.telegram_chat_id),
-        "discord": bool(settings.discord_webhook_url),
-        "_debug_discord_prefix": settings.discord_webhook_url[:30] + "..." if settings.discord_webhook_url else None,
+        "discord_legacy": bool(settings.discord_webhook_url),
+        "high_impact": bool(settings.discord_webhook_high_impact),
+        "sec_live": bool(settings.discord_webhook_sec_live),
+        "briefing": bool(settings.discord_webhook_briefing),
+        "clinical": bool(settings.discord_webhook_clinical),
     }
