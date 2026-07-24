@@ -403,57 +403,32 @@ def start_scheduler():
     seed_snapshots()
 
     # Price refresh every 5 minutes
-    scheduler.add_job(
-        refresh_prices,
-        "interval",
-        minutes=5,
-        id="refresh_prices",
-        replace_existing=True,
-    )
+    scheduler.add_job(refresh_prices, "interval", minutes=5, id="refresh_prices", replace_existing=True)
+
     # Alert check at the configured interval
-    scheduler.add_job(
-        check_alerts,
-        "interval",
-        hours=settings.refresh_interval_hours,
-        id="check_alerts",
-        replace_existing=True,
-    )
+    scheduler.add_job(check_alerts, "interval", hours=settings.refresh_interval_hours, id="check_alerts", replace_existing=True)
+
     # ClinicalTrials.gov pipeline — once daily
-    from scrapers.clinical_trials import run_pipeline
-    scheduler.add_job(
-        run_pipeline,
-        "interval",
-        hours=24,
-        id="clinical_trials_pipeline",
-        replace_existing=True,
-    )
-    # PDUFA pipeline — every 60 minutes (Atom feed is very lightweight)
+    from scrapers.clinical_trials import run_pipeline as _run_ct
+    scheduler.add_job(_run_ct, "interval", hours=24, id="clinical_trials_pipeline", replace_existing=True)
+
+    # PDUFA pipeline — every 60 minutes
     from scrapers.pdufa import run_pdufa_pipeline
-    scheduler.add_job(
-        run_pdufa_pipeline,
-        "interval",
-        minutes=60,
-        id="pdufa_pipeline",
-        replace_existing=True,
-    )
-    # Run PDUFA once on startup
-    scheduler.add_job(
-        run_pdufa_pipeline,
-        "date",
-        run_date=datetime.datetime.utcnow() + datetime.timedelta(seconds=35),
-        id="pdufa_pipeline_initial",
-        replace_existing=True,
-    )
-    # Run once on startup (30s delay) to catch up on first launch
-    scheduler.add_job(
-        run_pipeline,
-        "date",
-        run_date=datetime.datetime.utcnow() + datetime.timedelta(seconds=30),
-        id="clinical_trials_pipeline_initial",
-        replace_existing=True,
-    )
+    scheduler.add_job(run_pdufa_pipeline, "interval", minutes=60, id="pdufa_pipeline", replace_existing=True)
+
+    # ── Run-once on startup ──
+    scheduler.add_job(run_pdufa_pipeline, "date", run_date=datetime.datetime.utcnow() + datetime.timedelta(seconds=35), id="pdufa_pipeline_initial", replace_existing=True)
+    scheduler.add_job(_run_ct, "date", run_date=datetime.datetime.utcnow() + datetime.timedelta(seconds=30), id="clinical_trials_pipeline_initial", replace_existing=True)
+
+    # ── Daily briefings ──
+    from app.services.notifier import send_morning_briefing, send_evening_briefing
+    if settings.discord_webhook_briefing:
+        scheduler.add_job(send_morning_briefing, "cron", hour=8, minute=30, id="morning_briefing", replace_existing=True)
+        scheduler.add_job(send_evening_briefing, "cron", hour=21, minute=0, id="evening_briefing", replace_existing=True)
+        logger.info("Daily briefings scheduled (08:30 / 21:00 UTC).")
+
     scheduler.start()
-    logger.info("Scheduler started — prices every 5min, alerts every %dh.", settings.refresh_interval_hours)
+    logger.info("Scheduler started — prices 5m, alerts %dh, briefings daily.", settings.refresh_interval_hours)
 
 
 def stop_scheduler():

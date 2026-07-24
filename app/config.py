@@ -8,6 +8,13 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
     discord_webhook_url: str = ""
+
+    # ── Discord channel-specific webhooks ──
+    discord_webhook_high_impact: str = ""
+    discord_webhook_sec_live: str = ""
+    discord_webhook_briefing: str = ""
+    discord_webhook_clinical: str = ""
+
     alert_days_before: int = 7
     refresh_interval_hours: int = 6
     base_url: str = "http://localhost:8000"

@@ -228,6 +228,8 @@ def run_pipeline():
       The ``alert_sent`` timestamp is preserved so already-alerted events
       stay alerted.
     * Studies the API no longer returns are left untouched.
+    * Status changes (phase upgrades, new completions) are sent to
+      ``#clinical-trials-updates`` on Discord.
     """
     db = SessionLocal()
     try:
@@ -237,6 +239,7 @@ def run_pipeline():
 
         total_new = 0
         total_upd = 0
+        changes = []  # collect (ticker, company, drug, change_desc, nct_id)
 
         for t in tickers:
             candidates = _scrape_company(t.ticker, t.id)
@@ -247,6 +250,8 @@ def run_pipeline():
                 ).first()
 
                 if existing:
+                    # Detect meaningful changes for the clinical-trials channel
+                    _detect_change(existing, ev_data, t, changes)
                     # Refresh fields but keep alert_sent
                     existing.event_date = ev_data["event_date"]
                     existing.title = ev_data["title"]
@@ -264,8 +269,65 @@ def run_pipeline():
         else:
             logger.debug("Pipeline: no changes")
 
+        # ── Push change notifications ──
+        if changes and settings.discord_webhook_clinical:
+            _send_clinical_changes(changes)
+
     except Exception as exc:
         logger.error("Pipeline error: %s", exc)
         db.rollback()
     finally:
         db.close()
+
+
+def _detect_change(existing, ev_data, ticker_obj, changes):
+    """Compare old and new event data; append to *changes* if notable."""
+    old_type = existing.event_type
+    new_type = ev_data["event_type"]
+    old_date = existing.event_date
+    new_date = ev_data["event_date"]
+
+    # Phase upgrade: e.g. PHASE2_READOUT → PHASE3_READOUT
+    upgrade_order = {"PHASE1_READOUT": 1, "PHASE2_READOUT": 2, "PHASE3_READOUT": 3, "PDUFA": 4}
+    if old_type in upgrade_order and new_type in upgrade_order and upgrade_order.get(new_type, 0) > upgrade_order.get(old_type, 0):
+        # Extract drug name from description
+        drug = _extract_drug_from_desc(existing.description)
+        changes.append((
+            existing.ticker,
+            ticker_obj.company_name if ticker_obj else existing.ticker,
+            drug,
+            f"**Phase Upgrade** — moved from {old_type.replace('_', ' ').title()} → {new_type.replace('_', ' ').title()} for {existing.title[:80]}",
+            existing.external_id or "",
+        ))
+        return
+
+    # Significant date change (slipped more than 30 days)
+    if old_date and new_date:
+        delta = (new_date - old_date).days
+        if abs(delta) > 30:
+            direction = "delayed" if delta > 0 else "advanced"
+            drug = _extract_drug_from_desc(existing.description)
+            changes.append((
+                existing.ticker,
+                ticker_obj.company_name if ticker_obj else existing.ticker,
+                drug,
+                f"**Date Change** — {direction} by {abs(delta)} days (was {old_date.strftime('%b %Y')} → {new_date.strftime('%b %Y')}) for {existing.title[:80]}",
+                existing.external_id or "",
+            ))
+
+
+def _extract_drug_from_desc(desc: str) -> str:
+    """Pull drug name from the structured description field."""
+    if not desc:
+        return "Unknown"
+    for line in desc.split("\n"):
+        if line.startswith("💊 Drug:"):
+            return line.replace("💊 Drug:", "").strip()
+    return "Investigational"
+
+
+def _send_clinical_changes(changes: list):
+    """Send batched clinical trial change notifications to Discord."""
+    from app.services.notifier import send_clinical_change
+    for ticker, company, drug, change_desc, nct_id in changes:
+        send_clinical_change(ticker, company, drug, change_desc, nct_id)
