@@ -18,6 +18,8 @@ A production-ready web application that tracks **295 clinical-stage pharmaceutic
 - **✅ 34 hand-curated events** — detailed drug descriptions & background
 - **✅ Table + Timeline view** — sortable, filterable
 - **✅ Event detail modal** — drug name, mechanism, phase, trial, analysis
+- **✅ 4 Discord channels** — high-impact alerts, SEC filings, daily briefing, clinical updates
+- **✅ Daily morning & evening briefing** — cron-scheduled market radar
 - **✅ Live alert banner** — red bar for events ≤7 days
 - **✅ Discord notifications** — automatic push alerts
 - **✅ Dark mode dashboard** — Tailwind CSS, responsive
@@ -112,7 +114,8 @@ docker run -p 8000:8000 -e DATABASE_URL="..." pharma-alert
 |---|---|---|
 | **Yahoo Finance** (`yfinance`) | Live stock prices, daily change % | Every 5 min |
 | **ClinicalTrials.gov** (API v2) | Phase 2/3 trial readouts | Every 24h |
-| **SEC EDGAR** (Atom feed) | PDUFA dates from 8-K/6-K filings | Every 60 min |
+| **SEC EDGAR — PDUFA** (Atom feed) | PDUFA dates from 8-K/6-K Exhibit 99.1 | Every 60 min |
+| **SEC EDGAR — General** (Atom feed) | 8-K, 13D/13G, S-1/S-3 filings for tracked tickers | Every 30 min |
 | **Seed data** | 295 tickers + 34 hand-curated events | First startup only |
 
 ---
@@ -167,18 +170,40 @@ Drug name, mechanism, phase, trial name, milestone, and background analysis.
 
 ## Notifications
 
-**Discord** — rich embed with color-coded border (green/yellow/grey):
-- Ticker, date, countdown, impact level
-- Yahoo Finance + Dashboard links
+### 📡 Discord Multi-Channel System
 
-**Telegram** — HTML formatted message (optional)
+Four dedicated channels, each with a specific purpose:
+
+| Channel | Content | Frequency | Ping |
+|---|---|---|---|
+| **#high-impact-catalysts** | PDUFA dates, Phase 3 readouts, FDA decisions | 1-3/day | ✅ `@everyone` |
+| **#sec-filings-live** | 8-K, 13D/13G, S-1/S-3 filings for tracked tickers | 5-20+/day | ❌ |
+| **#daily-biotech-briefing** | 🌅 Morning radar (08:30 UTC) + 🌙 Evening wrap (21:00 UTC) | 2/day fixed | ❌ |
+| **#clinical-trials-updates** | Phase upgrades, date slips, status changes on CT.gov | 3-10/day | ❌ |
+
+### SEC Filing Types Monitored
+
+| Form | What it signals |
+|---|---|
+| **8-K** | Clinical results, FDA updates, material events |
+| **6-K** | Foreign company equivalent of 8-K (SNY, AZN, NVS) |
+| **13D** | Activist investor / >5% accumulation |
+| **13G** | Passive institutional >5% ownership |
+| **S-1** | IPO / new share registration (dilution risk) |
+| **S-3** | Shelf registration (future dilution potential) |
 
 ### Setup
 
 ```ini
-DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
-TELEGRAM_BOT_TOKEN=...     # optional
-TELEGRAM_CHAT_ID=...       # optional
+# Discord channel webhooks
+DISCORD_WEBHOOK_HIGH_IMPACT=https://discord.com/api/webhooks/...
+DISCORD_WEBHOOK_SEC_LIVE=https://discord.com/api/webhooks/...
+DISCORD_WEBHOOK_BRIEFING=https://discord.com/api/webhooks/...
+DISCORD_WEBHOOK_CLINICAL=https://discord.com/api/webhooks/...
+
+# Telegram (optional)
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_CHAT_ID=...
 ALERT_DAYS_BEFORE=7
 ```
 
@@ -212,8 +237,9 @@ pharma-alert/
 │       └── dashboard.html          # Tailwind CSS UI
 ├── scrapers/
 │   ├── company_map.py              # Alias management
-│   ├── clinical_trials.py          # CT.gov scraper
-│   └── pdufa.py                    # SEC EDGAR PDUFA
+│   ├── clinical_trials.py          # CT.gov scraper + change detection
+│   ├── pdufa.py                    # SEC EDGAR PDUFA extraction
+│   └── sec_filings.py              # SEC general filings monitor (8-K, 13D, S-1)
 ├── data/
 │   └── seed_data.py                # 295 tickers + 34 events
 ├── alembic/
