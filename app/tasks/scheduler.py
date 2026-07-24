@@ -29,24 +29,36 @@ _FALLBACK_PRICES: dict[str, float] = {
 
 
 def seed_snapshots():
-    """On first startup, fill PriceSnapshot with fallback prices so the dashboard
-    never shows empty prices.  Once the first live refresh runs, these get overwritten."""
+    """Fill PriceSnapshot for ALL tickers (not just the hardcoded 31).
+
+    New tickers added via the API (bulk import) get a null entry so they
+    appear on the dashboard immediately.  Live prices fill in as yfinance
+    data arrives on subsequent 5-minute cycles.
+    """
     db = SessionLocal()
     try:
-        existing = db.query(PriceSnapshot).count()
-        if existing > 0:
-            return  # already seeded
+        ticker_rows = db.query(Ticker).all()
+        if not ticker_rows:
+            return
 
+        existing_tickers = {s.ticker for s in db.query(PriceSnapshot).all()}
         now = datetime.datetime.utcnow()
-        for ticker, price in _FALLBACK_PRICES.items():
-            db.add(PriceSnapshot(
-                ticker=ticker,
-                price=price,
-                change_percent=None,
-                updated_at=now,
-            ))
-        db.commit()
-        logger.info("Seeded PriceSnapshot with %d fallback prices", len(_FALLBACK_PRICES))
+        added = 0
+
+        for t in ticker_rows:
+            if t.ticker not in existing_tickers:
+                fallback = _FALLBACK_PRICES.get(t.ticker)
+                db.add(PriceSnapshot(
+                    ticker=t.ticker,
+                    price=fallback,
+                    change_percent=None,
+                    updated_at=now,
+                ))
+                added += 1
+
+        if added:
+            db.commit()
+            logger.info("Seeded PriceSnapshot with %d entries (fallback for %d)", added, len(_FALLBACK_PRICES))
     except Exception as exc:
         logger.error("Failed to seed PriceSnapshot: %s", exc)
         db.rollback()
@@ -92,7 +104,7 @@ def refresh_prices():
             updated += 1
 
             # Short delay between tickers to avoid Yahoo rate limiting
-            time.sleep(1.0)
+            time.sleep(0.5)
 
         db.commit()
         logger.info("PriceSnapshot refreshed — %d tickers updated", updated)
