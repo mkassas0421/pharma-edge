@@ -2,9 +2,6 @@
 
 import datetime
 import logging
-import time
-from collections import defaultdict
-from contextlib import asynccontextmanager
 
 # Only show WARNING+ from third-party libraries; our app messages stay INFO
 logging.basicConfig(level=logging.WARNING)
@@ -15,12 +12,14 @@ logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 for noisy in ("urllib3", "requests", "yfinance", "yfinance.utils", "yfinance.data"):
     logging.getLogger(noisy).setLevel(logging.CRITICAL)
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
-from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, Response
 
 from app.config import settings
+from app.middleware.rate_limit import rate_limit_middleware
 from app.models.database import init_db, SessionLocal
 from data.seed_data import seed_database
 from scrapers.company_map import seed_aliases
@@ -60,31 +59,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Templates
 templates = Jinja2Templates(directory="app/templates")
 
-# ── Basic rate limiter (in-memory, per IP) ──
-_RATE_LIMIT_WINDOW = 60  # seconds
-_RATE_LIMIT_MAX = 30     # requests per window for mutating endpoints
-_rate_store: dict[str, list[float]] = defaultdict(list)
-
-@app.middleware("http")
-async def rate_limit_middleware(request: Request, call_next):
-    # Only rate-limit mutating endpoints (POST, DELETE)
-    if request.method in ("POST", "DELETE") and request.url.path.startswith("/api/"):
-        client_ip = request.client.host if request.client else "unknown"
-        now = time.time()
-        window_start = now - _RATE_LIMIT_WINDOW
-        # Prune old entries and count current window
-        _rate_store[client_ip] = [t for t in _rate_store[client_ip] if t > window_start]
-        if len(_rate_store[client_ip]) >= _RATE_LIMIT_MAX:
-            from fastapi.responses import JSONResponse
-            return JSONResponse(
-                status_code=429,
-                content={"detail": "Too many requests. Please slow down."},
-            )
-        _rate_store[client_ip].append(now)
-    return await call_next(request)
+# Rate limiter for mutating API endpoints
+app.middleware("http")(rate_limit_middleware)
 
 # API routes
 app.include_router(dashboard.router)
@@ -120,7 +98,7 @@ def health():
     }
 
 
-# ── Favicon ──────────────────────────────────────────────────────────────────
+# ── Favicon ─────────────────────────────────────────────────────────────────
 
 FAVICON_SVG = b'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
   <defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">

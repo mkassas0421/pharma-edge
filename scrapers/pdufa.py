@@ -14,12 +14,13 @@ import httpx
 from bs4 import BeautifulSoup
 
 from app.models.database import SessionLocal, Ticker, CatalystEvent
+from app.utils.dates import parse_date as _parse_date
+from app.utils.http import SEC_HEADERS
 
 logger = logging.getLogger(__name__)
 
 SEC_ARCHIVE = "https://www.sec.gov/Archives/edgar/data"
 SEC_SEARCH = "https://efts.sec.gov/LATEST/search-index"
-H = {"User-Agent": "PharmaCatalystAlert/1.0 (admin@pharma-edge.com)"}
 
 PDUFA_PATTERNS = [
     r"assigned\s+(?:a\s+)?PDUFA\s+(?:goal\s+)?(?:target\s+)?action\s+date\s+(?:of|is)\s+(\w+\s+\d{1,2},?\s*\d{4})",
@@ -35,17 +36,8 @@ PDUFA_PATTERNS = [
 _CATCHUP_DONE = False
 
 
-def _parse_date(s: str) -> datetime.datetime | None:
-    s = s.strip().replace(",", "")
-    for fmt in ("%B %d %Y", "%b %d %Y", "%B %Y"):
-        try:
-            return datetime.datetime.strptime(s, fmt)
-        except ValueError:
-            continue
-    return None
-
-
 def _extract_drug(text: str) -> str:
+    """Extract a drug name from text surrounding a PDUFA mention."""
     for p in [
         r"(?:for|of)\s+([A-Z][A-Za-z0-9\-à-ɏ\(\)]+)\s*(?:\(NDA|\(BLA|\(sNDA|,|\.)",
         r"PDUFA\s+date\s+for\s+([A-Z][A-Za-z0-9\-à-ɏ]+)",
@@ -58,10 +50,11 @@ def _extract_drug(text: str) -> str:
     return "Unknown"
 
 
-def _get_files(cik: str, adsh: str) -> list[dict]:
+def _get_filing_files(cik: str, adsh: str) -> list[dict]:
+    """List .htm filing documents for a given CIK + accession number."""
     ac = adsh.replace("-", "")
     try:
-        with httpx.Client(timeout=15, headers=H) as cl:
+        with httpx.Client(timeout=15, headers=SEC_HEADERS) as cl:
             resp = cl.get(f"{SEC_ARCHIVE}/{cik.lstrip('0')}/{ac}/", follow_redirects=True)
             resp.raise_for_status()
     except Exception:
@@ -79,8 +72,9 @@ def _get_files(cik: str, adsh: str) -> list[dict]:
 
 
 def _check_pdufa(url: str) -> dict | None:
+    """Fetch a filing document and search for PDUFA dates."""
     try:
-        with httpx.Client(timeout=15, headers=H) as cl:
+        with httpx.Client(timeout=15, headers=SEC_HEADERS) as cl:
             resp = cl.get(url)
             resp.raise_for_status()
             text = resp.text
@@ -99,8 +93,9 @@ def _check_pdufa(url: str) -> dict | None:
     return None
 
 
-def process_one(ticker: str, tid: int, cik: str, adsh: str, db, now):
-    files = _get_files(cik, adsh)
+def _process_filing(ticker: str, tid: int, cik: str, adsh: str, db, now) -> tuple[int, int]:
+    """Process one SEC filing for PDUFA dates. Returns (new_count, updated_count)."""
+    files = _get_filing_files(cik, adsh)
     if not files:
         return 0, 0
     urls = []
@@ -116,7 +111,7 @@ def process_one(ticker: str, tid: int, cik: str, adsh: str, db, now):
         r = _check_pdufa(u)
         if r and r["date"] >= now - datetime.timedelta(days=30):
             ext = f"SEC-{ticker}-{r['date'].strftime('%Y%m%d')}"
-            title = f"PDUFA date — {r['drug']}" if r['drug'] != "Unknown" else f"PDUFA date — {ticker}"
+            title = f"PDUFA date — {r['drug']}" if r["drug"] != "Unknown" else f"PDUFA date — {ticker}"
             exist = db.query(CatalystEvent).filter(CatalystEvent.external_id == ext).first()
             if exist:
                 if exist.event_date != r["date"] or exist.title != title:
@@ -134,25 +129,30 @@ def process_one(ticker: str, tid: int, cik: str, adsh: str, db, now):
     return 0, 0
 
 
+def _search_sec_pdufa(query: str, page: int = 1, page_size: int = 100) -> list[dict]:
+    """Query the SEC search index for PDUFA-related filings."""
+    params = {"q": query, "dateRange": "2y", "page": page, "r": page_size}
+    try:
+        with httpx.Client(timeout=25, headers=SEC_HEADERS) as cl:
+            resp = cl.get(SEC_SEARCH, params=params)
+            if resp.status_code != 200:
+                return []
+            return resp.json().get("hits", {}).get("hits", [])
+    except Exception:
+        return []
+
+
 def run_catchup(db, ticker_map, now):
-    """Broad SEC search + per-ticker fallback."""
-    total_n = 0
-    total_u = 0
+    """Broad SEC search + per-ticker fallback for historical PDUFA filings."""
+    total_n = total_u = 0
     found_in_broad = set()
 
     for page in range(1, 11):
-        params = {"q": "PDUFA", "dateRange": "2y", "page": page, "r": 100}
-        try:
-            with httpx.Client(timeout=25, headers=H) as cl:
-                resp = cl.get(SEC_SEARCH, params=params)
-                if resp.status_code != 200:
-                    continue
-                body = resp.json()
-        except Exception:
-            continue
-        for hit in body.get("hits", {}).get("hits", []):
+        hits = _search_sec_pdufa("PDUFA", page=page)
+        for hit in hits:
             src = hit.get("_source", {})
-            adsh = src.get("adsh", ""); ciks = src.get("ciks", [])
+            adsh = src.get("adsh", "")
+            ciks = src.get("ciks", [])
             if not adsh or not ciks:
                 continue
             display = " ".join(src.get("display_names", []))
@@ -160,70 +160,76 @@ def run_catchup(db, ticker_map, now):
             if not ticker:
                 continue
             found_in_broad.add(ticker)
-            n, u = process_one(ticker, ticker_map[ticker], ciks[0], adsh, db, now)
-            total_n += n; total_u += u
+            n, u = _process_filing(ticker, ticker_map[ticker], ciks[0], adsh, db, now)
+            total_n += n
+            total_u += u
 
-    # Per-ticker fallback for missed tickers
+    # Per-ticker fallback for tickers not caught in the broad search
     missed = set(ticker_map.keys()) - found_in_broad
     for ticker in missed:
-        params = {"q": f"PDUFA AND {ticker}", "dateRange": "2y", "page": 1, "r": 5}
-        try:
-            with httpx.Client(timeout=20, headers=H) as cl:
-                resp = cl.get(SEC_SEARCH, params=params)
-                if resp.status_code != 200:
-                    continue
-                body = resp.json()
-        except Exception:
-            continue
-        for hit in body.get("hits", {}).get("hits", []):
+        hits = _search_sec_pdufa(f"PDUFA AND {ticker}", page=1, page_size=5)
+        for hit in hits:
             src = hit.get("_source", {})
-            adsh = src.get("adsh", ""); ciks = src.get("ciks", [])
+            adsh = src.get("adsh", "")
+            ciks = src.get("ciks", [])
             if not adsh or not ciks:
                 continue
             if ticker not in " ".join(src.get("display_names", [])):
                 continue
-            n, u = process_one(ticker, ticker_map[ticker], ciks[0], adsh, db, now)
-            total_n += n; total_u += u
+            n, u = _process_filing(ticker, ticker_map[ticker], ciks[0], adsh, db, now)
+            total_n += n
+            total_u += u
 
     return total_n, total_u, len(found_in_broad)
 
 
-def run_feed(db, ticker_map, now):
-    """Check Atom feed for both 8-K and 6-K filings."""
-    total_n = 0
-    total_u = 0
+def _parse_atom_feed(feed_type: str) -> list[dict]:
+    """Parse SEC Atom feed for *feed_type* (8-K or 6-K) and return entries matching tracked tickers."""
+    url = f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type={feed_type}&output=atom"
+    try:
+        with httpx.Client(timeout=20, headers=SEC_HEADERS) as cl:
+            resp = cl.get(url)
+            resp.raise_for_status()
+    except Exception:
+        return []
 
-    for feed_type in ('8-K', '6-K'):
-        url = f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type={feed_type}&output=atom"
-        try:
-            with httpx.Client(timeout=20, headers=H) as cl:
-                resp = cl.get(url)
-                resp.raise_for_status()
-        except Exception:
+    entries = []
+    root = ET.fromstring(resp.text)
+    for entry in root.findall("{http://www.w3.org/2005/Atom}entry"):
+        se = entry.find("{http://www.w3.org/2005/Atom}summary")
+        te = entry.find("{http://www.w3.org/2005/Atom}title")
+        if se is None or te is None:
             continue
+        title = te.text or ""
+        summary = se.text or ""
+        cik_m = re.search(r"(\d{10})", title)
+        tk_m = re.search(r"\(([A-Z]{2,5})\)\s*\(Filer\)", title)
+        accn_m = re.search(r"AccNo:\s*(\S+)", summary)
+        if cik_m and tk_m and accn_m:
+            entries.append({
+                "ticker": tk_m.group(1),
+                "cik": cik_m.group(1),
+                "accession": accn_m.group(1),
+            })
+    return entries
 
-        root = ET.fromstring(resp.text)
-        for entry in root.findall("{http://www.w3.org/2005/Atom}entry"):
-            se = entry.find("{http://www.w3.org/2005/Atom}summary")
-            te = entry.find("{http://www.w3.org/2005/Atom}title")
-            if se is None or te is None:
-                continue
-            title = te.text or ""
-            summary = se.text or ""
-            cik_m = re.search(r"(\d{10})", title)
-            tk_m = re.search(r"\(([A-Z]{2,5})\)\s*\(Filer\)", title)
-            if not cik_m or not tk_m or tk_m.group(1) not in ticker_map:
-                continue
-            accn_m = re.search(r"AccNo:\s*(\S+)", summary)
-            if not accn_m:
-                continue
-            n, u = process_one(tk_m.group(1), ticker_map[tk_m.group(1)], cik_m.group(1), accn_m.group(1), db, now)
-            total_n += n; total_u += u
 
+def run_feed(db, ticker_map, now):
+    """Check Atom feed for both 8-K and 6-K PDUFA filings."""
+    total_n = total_u = 0
+    for feed_type in ("8-K", "6-K"):
+        entries = _parse_atom_feed(feed_type)
+        for e in entries:
+            if e["ticker"] not in ticker_map:
+                continue
+            n, u = _process_filing(e["ticker"], ticker_map[e["ticker"]], e["cik"], e["accession"], db, now)
+            total_n += n
+            total_u += u
     return total_n, total_u
 
 
 def run_pipeline():
+    """Main PDUFA pipeline — catch-up once, then feed polling."""
     global _CATCHUP_DONE
     db = SessionLocal()
     try:
@@ -231,7 +237,7 @@ def run_pipeline():
         if not tm:
             return
         now = datetime.datetime.utcnow()
-        tn, tu = 0, 0
+        tn = tu = 0
 
         if not _CATCHUP_DONE:
             n, u, matched = run_catchup(db, tm, now)
@@ -242,7 +248,8 @@ def run_pipeline():
             logger.info("Catch-up: %d new, %d updated (matched %d tickers)", n, u, matched)
 
         n, u = run_feed(db, tm, now)
-        tn += n; tu += u
+        tn += n
+        tu += u
         if n or u:
             db.commit()
         logger.debug("PDUFA: +%d/-%d this run", tn, tu)

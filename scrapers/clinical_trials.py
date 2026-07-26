@@ -15,6 +15,7 @@ import httpx
 
 from app.models.database import SessionLocal, Ticker, CatalystEvent
 from app.config import settings
+from app.utils.dates import parse_date as _parse_date
 from scrapers.company_map import search_terms, matches_ticker
 
 logger = logging.getLogger(__name__)
@@ -28,18 +29,6 @@ PHASE_MAP = {
     "PHASE4": ("REGULATORY", "Medium"),
     "EARLY_PHASE1": ("PHASE1_READOUT", "Low"),
 }
-
-
-def _parse_date(s: str | None) -> datetime.datetime | None:
-    if not s:
-        return None
-    s = s.strip()[:10]
-    if len(s) == 7 and s[4] == "-":
-        s = f"{s}-01"
-    try:
-        return datetime.datetime.strptime(s, "%Y-%m-%d")
-    except (ValueError, IndexError):
-        return None
 
 
 def _best_date(status_mod: dict) -> datetime.datetime | None:
