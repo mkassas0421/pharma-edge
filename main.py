@@ -12,6 +12,8 @@ logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 for noisy in ("urllib3", "requests", "yfinance", "yfinance.utils", "yfinance.data"):
     logging.getLogger(noisy).setLevel(logging.CRITICAL)
 
+logger = logging.getLogger(__name__)
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -23,6 +25,8 @@ from app.middleware.rate_limit import rate_limit_middleware
 from app.models.database import init_db, SessionLocal
 from data.seed_data import seed_database
 from scrapers.company_map import seed_aliases
+from scripts.cleanup_fabricated_events import cleanup as cleanup_fabricated
+from scripts.backfill_source_urls import backfill as backfill_source_urls
 
 from app.routes import dashboard, tickers, events
 from app.tasks.scheduler import start_scheduler, stop_scheduler
@@ -35,13 +39,20 @@ async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle."""
     init_db()
 
-    # Seed tickers + events if the db is empty
+    # Remove any fabricated (AI-generated) events, then seed tickers only —
+    # catalyst events now come exclusively from official government sources.
     db = SessionLocal()
     try:
+        cleaned = cleanup_fabricated(db)
+        if cleaned:
+            logger.info("Removed %d fabricated event(s)", cleaned)
         seed_database(db)
         seed_aliases()
     finally:
         db.close()
+
+    # Attach official source links to existing real events (idempotent)
+    backfill_source_urls()
 
     # Start the background scheduler for daily price refresh + alerts
     start_scheduler()

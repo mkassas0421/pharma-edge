@@ -186,16 +186,22 @@ def start_scheduler():
     from scrapers.pdufa import run_pdufa_pipeline
     from scrapers.sec_filings import run_sec_feed
     from scrapers.news_feed import run_news_feed
+    from scrapers.federal_register import run_federal_register_pipeline
+    from scrapers.fda_adcom import run_fda_adcom_pipeline
     from app.services.notifier import send_morning_briefing, send_evening_briefing
 
     scheduler.add_job(ct_pipeline, "interval", hours=24, id="clinical_trials_pipeline", replace_existing=True)
     scheduler.add_job(run_pdufa_pipeline, "interval", minutes=60, id="pdufa_pipeline", replace_existing=True)
     scheduler.add_job(run_sec_feed, "interval", minutes=30, id="sec_feed", replace_existing=True)
     scheduler.add_job(run_news_feed, "interval", minutes=60, id="news_feed", replace_existing=True)
+    scheduler.add_job(run_federal_register_pipeline, "interval", hours=12, id="federal_register_pipeline", replace_existing=True)
+    scheduler.add_job(run_fda_adcom_pipeline, "interval", hours=24, id="fda_adcom_pipeline", replace_existing=True)
 
     # ── Run-once on startup (with slight delays to spread load) ──
     scheduler.add_job(run_pdufa_pipeline, "date", run_date=datetime.datetime.utcnow() + datetime.timedelta(seconds=35), id="pdufa_pipeline_initial", replace_existing=True)
     scheduler.add_job(ct_pipeline, "date", run_date=datetime.datetime.utcnow() + datetime.timedelta(seconds=30), id="clinical_trials_pipeline_initial", replace_existing=True)
+    scheduler.add_job(run_federal_register_pipeline, "date", run_date=datetime.datetime.utcnow() + datetime.timedelta(seconds=45), id="federal_register_pipeline_initial", replace_existing=True)
+    scheduler.add_job(run_fda_adcom_pipeline, "date", run_date=datetime.datetime.utcnow() + datetime.timedelta(seconds=55), id="fda_adcom_pipeline_initial", replace_existing=True)
 
     # ── Daily briefings ──
     if settings.discord_webhook_briefing:

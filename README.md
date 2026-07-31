@@ -2,7 +2,7 @@
 
 A production-ready web application that tracks **228 clinical-stage pharmaceutical companies** and alerts you about upcoming high-impact events (FDA decisions, clinical trial readouts) that historically trigger major stock price movements.
 
-> **Current coverage:** 228 tickers, 1000+ events across 6 data sources, updated automatically.
+> **Current coverage:** 228 tickers, 600+ events, exclusively from official government sources, updated automatically.
 
 🔗 **Live demo:** [pharma-edge.onrender.com](https://pharma-edge.onrender.com)
 
@@ -13,13 +13,13 @@ A production-ready web application that tracks **228 clinical-stage pharmaceutic
 - **✅ 228 tickers** — large-cap biotech to micro-cap pharma
 - **✅ Live prices** — updated every 5 minutes (yfinance)
 - **✅ 228 real fallback prices** — dashboard shows prices from the first load
-- **✅ Automatic event discovery** — ClinicalTrials.gov + SEC EDGAR
+- **✅ Automatic event discovery** — exclusively official government sources: ClinicalTrials.gov, SEC EDGAR, Federal Register, FDA Advisory Committee Calendar
 - **✅ PDUFA date extraction** — from SEC 8-K/6-K filings, Exhibit 99.1
-- **✅ 32 hand-curated seed events** — detailed drug descriptions & background (1000+ scraped events from CT.gov on top)
+- **✅ Every event verifiable** — each event carries a `source_url` linking to the official source document
 - **✅ Table + Timeline view** — sortable, filterable
 - **✅ Event detail modal** — drug name, mechanism, phase, trial, analysis
 - **✅ 5 Discord channels** — high-impact alerts, SEC filings, daily briefing, clinical updates, pharma news
-- **✅ Pharma news feed** — Fierce Biotech, Fierce Pharma, GlobeNewswire every 15 min
+- **✅ Pharma news feed** — Fierce Biotech, Fierce Pharma, GlobeNewswire every 60 min
 - **✅ Daily morning & evening briefing** — cron-scheduled in configurable timezone
 - **✅ SEC general filings monitor** — 8-K, 13D/13G, S-1/S-3 for tracked tickers every 30 min
 - **✅ Subsidiary aliases** — large pharma subsidiaries (Janssen, Genzyme, etc.) mapped automatically
@@ -39,7 +39,7 @@ A production-ready web application that tracks **228 clinical-stage pharmaceutic
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │            Browser Dashboard (Tailwind CSS + vanilla JS)      │
-│  GET /api/dashboard  (<50ms, fully cached)                   │
+│  GET /api/dashboard  (reads cached DB tables, no live API)  │
 │  POST /api/tickers   (instant, <50ms, no sync CT.gov scrape) │
 └───────────────────────┬──────────────────────────────────────┘
                         │                    ▲

@@ -8,7 +8,7 @@ import datetime
 import logging
 from urllib.parse import urlparse
 
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text, inspect, text
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text, Boolean, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.config import settings
@@ -68,6 +68,8 @@ class CatalystEvent(Base):
     alert_sent = Column(DateTime, nullable=True, default=None)   # when the alert was last sent (None = not sent)
     external_id = Column(String(100), nullable=True, index=True) # e.g. NCT number from ClinicalTrials.gov
     source = Column(String(50), default="manual")                # manual, clinicaltrials_gov, fda
+    source_url = Column(String(1000), nullable=True)             # URL of the official source document
+    verified = Column(Boolean, default=False)                    # confirmed against an official source
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 
@@ -187,6 +189,8 @@ def _run_inline_migrations():
             ("alert_sent", "DATETIME"),
             ("external_id", "VARCHAR(100)"),
             ("source", "VARCHAR(50) DEFAULT 'manual'"),
+            ("source_url", "VARCHAR(1000)"),
+            ("verified", "BOOLEAN DEFAULT 0"),
         ],
     }
     try:

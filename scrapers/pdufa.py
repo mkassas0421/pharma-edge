@@ -124,6 +124,8 @@ def _process_filing(ticker: str, tid: int, cik: str, adsh: str, db, now) -> tupl
                 event_type="PDUFA", event_date=r["date"], impact_level="High",
                 description=f"FDA PDUFA target action date for {r['drug']} ({ticker}). Source: SEC 8-K ({adsh}).",
                 source="sec_edgar_pdufa", external_id=ext,
+                source_url=f"{SEC_ARCHIVE}/{cik.lstrip('0')}/{adsh.replace('-', '')}/",
+                verified=True,
             ))
             return 1, 0
     return 0, 0

@@ -260,6 +260,8 @@ def _study_to_event(study: dict, ticker: str, ticker_id: int) -> dict | None:
         "description": "\n".join(desc_parts),
         "source": "clinicaltrials_gov",
         "external_id": nct_id,
+        "source_url": f"https://clinicaltrials.gov/study/{nct_id}",
+        "verified": True,
     }
 
 

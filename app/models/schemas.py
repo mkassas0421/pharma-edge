@@ -45,6 +45,8 @@ class EventResponse(BaseModel):
     event_date: datetime.datetime
     impact_level: str
     description: str
+    source_url: str | None = None
+    verified: bool = False
 
     class Config:
         from_attributes = True
