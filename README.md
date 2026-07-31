@@ -1,8 +1,8 @@
 # Pharma Catalyst Alert System 🧬📊
 
-A production-ready web application that tracks **228 clinical-stage pharmaceutical companies** and alerts you about upcoming high-impact events (FDA decisions, clinical trial readouts) that historically trigger major stock price movements.
+A production-ready web application that tracks **295 clinical-stage pharmaceutical companies** and alerts you about upcoming high-impact events (FDA decisions, clinical trial readouts) that historically trigger major stock price movements.
 
-> **Current coverage:** 228 tickers, 600+ events, exclusively from official government sources, updated automatically.
+> **Current coverage:** 295 tickers, 1300+ events, exclusively from official government sources, updated automatically.
 
 🔗 **Live demo:** [pharma-edge.onrender.com](https://pharma-edge.onrender.com)
 
@@ -10,7 +10,7 @@ A production-ready web application that tracks **228 clinical-stage pharmaceutic
 
 ## Features
 
-- **✅ 228 tickers** — large-cap biotech to micro-cap pharma
+- **✅ 295 tickers** — large-cap biotech to micro-cap pharma
 - **✅ Live prices** — updated every 5 minutes (yfinance)
 - **✅ 228 real fallback prices** — dashboard shows prices from the first load
 - **✅ Automatic event discovery** — exclusively official government sources: ClinicalTrials.gov, SEC EDGAR, Federal Register, FDA Advisory Committee Calendar
