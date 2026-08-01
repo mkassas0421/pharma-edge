@@ -47,8 +47,10 @@ _HIGH_IMPACT_KEYWORDS = [
     "biologics license", "supplement", "label expansion",
 ]
 
-# Track seen accession numbers (FIFO, max 5000)
+# Fast-path cache for seen accession numbers; the persistent source of
+# truth is the scraper_dedup table (survives restarts).
 _seen_filings = BoundedSet(maxsize=5000)
+_DEDUP_SOURCE = "sec_filings"
 
 
 def _fetch_feed(form: str) -> list[dict]:
@@ -101,6 +103,8 @@ def run_sec_feed():
     New (unseen) matches are sent to the ``#sec-filings-live`` Discord channel.
     Runs every 30 minutes via the scheduler.
     """
+    from scrapers.dedup import is_seen, mark_seen, prune_old
+
     db = SessionLocal()
     try:
         tickers = db.query(Ticker).all()
@@ -116,10 +120,10 @@ def run_sec_feed():
                 time.sleep(SEC_FEED_DELAY)
             entries = _fetch_feed(form)
             for entry in entries:
-                if entry["accession"] and entry["accession"] in _seen_filings:
+                if entry["accession"] and is_seen(db, _DEDUP_SOURCE, entry["accession"], _seen_filings):
                     continue
                 if entry["accession"]:
-                    _seen_filings.add(entry["accession"])
+                    mark_seen(db, _DEDUP_SOURCE, entry["accession"], _seen_filings)
 
                 ticker_match = None
                 reason = ""
@@ -168,7 +172,11 @@ def run_sec_feed():
         if total_matches:
             logger.info("SEC feed: %d new filing(s) across %d form type(s)", total_matches, len(FORM_TYPES))
 
+        # Persist dedup markers + prune old ones (single transaction)
+        prune_old(db, _DEDUP_SOURCE)
+        db.commit()
     except Exception as exc:
         logger.error("SEC feed error: %s", exc)
+        db.rollback()
     finally:
         db.close()

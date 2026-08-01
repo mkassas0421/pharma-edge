@@ -4,9 +4,13 @@ Only includes companies known to have active clinical pipelines.
 Skips gracefully if a ticker already exists in the system.
 """
 
-import httpx, time, sys
+import httpx, time, sys, os
 
 BASE = "https://pharma-edge.onrender.com"
+
+# Mutating endpoints require the API key after Phase D — set it locally:
+#   export API_KEY=... (or set it in .env)
+_HEADERS = {"X-API-Key": os.environ.get("API_KEY", "")}
 
 # Clean list — all confirmed clinical-stage biotech/pharma companies
 TICKERS = [
@@ -319,6 +323,7 @@ def main():
             r = httpx.post(
                 f"{BASE}/api/tickers",
                 json={"ticker": sym, "company_name": name, "sector": "Biotech"},
+                headers=_HEADERS,
                 timeout=65,
             )
             if r.status_code == 201:

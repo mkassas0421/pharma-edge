@@ -218,9 +218,17 @@ def _fetch_briefing_data():
 
 def _format_briefing_lines(today_events, week_high, snapshots, db):
     """Format the three sections of the briefing embed."""
+    # Pre-fetch every referenced company name in one query (avoids N+1)
+    relevant = {ev.ticker for ev in today_events}
+    relevant.update(ev.ticker for ev in week_high)
+    relevant.update(s.ticker for s in snapshots)
+    company_map: dict[str, str] = {}
+    if relevant:
+        rows = db.query(Ticker).filter(Ticker.ticker.in_(relevant)).all()
+        company_map = {t.ticker: t.company_name for t in rows}
+
     lines_today = []
     for ev in today_events[:8]:
-        t_obj = db.query(Ticker).filter(Ticker.ticker == ev.ticker).first()
         lines_today.append(f"• **${ev.ticker}** — {ev.title} ({ev.event_date.strftime('%b %d')})")
 
     lines_week = []
@@ -229,8 +237,7 @@ def _format_briefing_lines(today_events, week_high, snapshots, db):
 
     lines_movers = []
     for s in snapshots:
-        ticker_obj = db.query(Ticker).filter(Ticker.ticker == s.ticker).first()
-        name = ticker_obj.company_name if ticker_obj else s.ticker
+        name = company_map.get(s.ticker, s.ticker)
         sign = "+" if s.change_percent and s.change_percent >= 0 else ""
         lines_movers.append(f"• **${s.ticker}** {name} — {sign}{s.change_percent:.2f}%")
 

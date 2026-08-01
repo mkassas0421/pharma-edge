@@ -69,14 +69,15 @@ A production-ready web application that tracks **295 clinical-stage pharmaceutic
 
 ### Design decisions
 
-1. **No on-demand API calls.** All data is pre-cached by background jobs. Response times <50ms.
+1. **No on-demand API calls.** All data is pre-cached by background jobs; dashboard responses are TTL-cached in memory (60s) — sub-50ms on repeat loads.
 2. **Exhibit-based PDUFA extraction.** PDUFA dates are in **Exhibit 99.1**, not the main 8-K form.
 3. **6-K support for foreign companies.** Pipeline monitors both 8-K (domestic) and 6-K (foreign).
 4. **Alert deduplication.** Each event fired at most once (`alert_sent` timestamp).
-5. **Auto-generated aliases.** CT.gov sponsor aliases generated from company name, plus hand-curated subsidiary names (Janssen, Genzyme, Wyeth, etc.).
+5. **Auto-generated aliases.** CT.gov sponsor aliases generated from company name, plus hand-curated subsidiary names (Janssen, Genzyme, Wyeth, Eli Lilly Research, Celgene, etc.).
 6. **No sync CT.gov scrape on ticker creation.** The 24h background pipeline handles event discovery.
-7. **Bounded in-memory dedup caches.** SEC filings (5000-entry FIFO) and news URLs (2000-entry FIFO) to prevent memory leaks.
-8. **Rate-limited mutating endpoints.** 30 POST/DELETE requests per 60s per IP — returns HTTP 429.
+7. **Persistent dedup for notification feeds.** SEC filings and news URLs are logged in the `scraper_dedup` table (with an in-memory FIFO fast path), so a restart never re-notifies old items.
+8. **Rate-limited mutating endpoints.** 30 POST/DELETE requests per 60s per real IP (`X-Forwarded-For`) — returns HTTP 429.
+9. **API-key auth on mutating endpoints.** POST/DELETE requires the `X-API-Key` header; GET stays public for the dashboard.
 
 ---
 
@@ -112,7 +113,7 @@ docker run -p 8000:8000 -e DATABASE_URL="..." pharma-alert
 
 | Time | What happens |
 |---|---|
-| **0 sec** | 228 tickers on dashboard (228 real fallback prices) |
+| **0 sec** | 294 tickers on dashboard (228 real fallback prices) |
 | **5-10 min** | Live prices arrive (yfinance 5-min cycle) |
 | **~60 min** | 1000+ events from ClinicalTrials.gov pipeline (1s delay between tickers) |
 | **24h** | Full sync complete, daily updates thereafter |
@@ -123,12 +124,12 @@ docker run -p 8000:8000 -e DATABASE_URL="..." pharma-alert
 
 | Job | Frequency | Description |
 |---|---|---|
-| `refresh_prices` | Every 5 min | yfinance → 228 tickers with 0.5s delay |
+| `refresh_prices` | Every 5 min | yfinance → 294 tickers with 0.5s delay |
 | `check_alerts` | Every 6 hours | Discord @everyone for High-impact events ≤7 days |
 | `clinical_trials_pipeline` | Every 24 hours | CT.gov API v2 → new/updated events with 1s rate-limit delay |
 | `pdufa_pipeline` | Every 60 min | SEC Atom feed → Exhibit 99.1 → new PDUFA dates |
 | `sec_feed` | Every 30 min | SEC 8-K, 13D/13G, S-1/S-3 filings for tracked tickers (3s rate-limit between feeds) |
-| `news_feed` | Every 15 min | Fierce Biotech, Fierce Pharma, GlobeNewswire RSS |
+| `news_feed` | Every 60 min | Fierce Biotech, Fierce Pharma, GlobeNewswire RSS |
 | `morning_briefing` | 08:30 (configurable TZ) | Daily radar: today's catalysts, weekly high-impact, pre-market movers |
 | `evening_briefing` | 21:00 (configurable TZ) | Daily wrap: top gainers/losers, tomorrow's watchlist |
 
@@ -141,28 +142,28 @@ docker run -p 8000:8000 -e DATABASE_URL="..." pharma-alert
 | **Yahoo Finance** (`yfinance`) | Live stock prices, daily change % | Every 5 min |
 | **SEC EDGAR — PDUFA** (Atom feed) | PDUFA dates from 8-K/6-K Exhibit 99.1 | Every 60 min |
 | **SEC EDGAR — General** (Atom feed) | 8-K, 13D/13G, S-1/S-3 filings for tracked tickers | Every 30 min |
-| **RSS News Feeds** (feedparser) | Fierce Biotech, Fierce Pharma, GlobeNewswire Biotech | Every 15 min |
+| **RSS News Feeds** (feedparser) | Fierce Biotech, Fierce Pharma, GlobeNewswire Biotech | Every 60 min |
 | **ClinicalTrials.gov** (API v2) | 1000+ **scraped** Phase 2/3 trial events (source: `clinicaltrials_gov`) | Every 24h |
-| **Seed data** | 228 tickers + 32 **hand-curated** events with detailed drug backgrounds (source: `manual`) | First startup only |
+| **Seed data** | 294 tickers (official-source events only — no curated events) | First startup only |
 
 ---
 
 ## API Reference
 
 ### Tickers
-| Method | Endpoint | Rate Limited | Description |
-|---|---|---|---|
-| `GET` | `/api/tickers` | No | List all tracked tickers |
-| `POST` | `/api/tickers` | Yes (30/60s) | Add ticker (instant, no sync scrape) |
-| `DELETE` | `/api/tickers/{ticker}` | Yes (30/60s) | Delete ticker (cascades to events, aliases, prices) |
+| Method | Endpoint | Auth | Rate Limited | Description |
+|---|---|---|---|---|
+| `GET` | `/api/tickers` | — | No | List all tracked tickers |
+| `POST` | `/api/tickers` | `X-API-Key` | Yes (30/60s) | Add ticker (instant, no sync scrape) |
+| `DELETE` | `/api/tickers/{ticker}` | `X-API-Key` | Yes (30/60s) | Delete ticker (cascades to events, aliases, prices) |
 
 ### Events
-| Method | Endpoint | Rate Limited | Description |
-|---|---|---|---|
-| `GET` | `/api/events` | No | List events (`?ticker=`, `?upcoming_only=true`) |
-| `GET` | `/api/events/{id}` | No | Event detail |
-| `POST` | `/api/events` | Yes (30/60s) | Create manual event |
-| `DELETE` | `/api/events/{id}` | Yes (30/60s) | Delete event |
+| Method | Endpoint | Auth | Rate Limited | Description |
+|---|---|---|---|---|
+| `GET` | `/api/events` | — | No | List events (`?ticker=`, `?upcoming_only=true`) |
+| `GET` | `/api/events/{id}` | — | No | Event detail |
+| `POST` | `/api/events` | `X-API-Key` | Yes (30/60s) | Create manual event |
+| `DELETE` | `/api/events/{id}` | `X-API-Key` | Yes (30/60s) | Delete event |
 
 ### Dashboard
 | Method | Endpoint | Description |
@@ -176,7 +177,7 @@ docker run -p 8000:8000 -e DATABASE_URL="..." pharma-alert
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/notify-status` | Which channels are configured (all 5 Discord + Telegram) |
-| `POST` | `/api/test-notify` | Send test alert to #high-impact-catalysts |
+| `POST` | `/api/test-notify` (`X-API-Key`) | Send test alert to #high-impact-catalysts |
 
 ---
 
@@ -281,10 +282,10 @@ pharma-alert/
 │   ├── company_map.py              # Alias management + subsidiary map
 │   ├── clinical_trials.py          # CT.gov scraper + phase/date change detection
 │   ├── pdufa.py                    # SEC EDGAR PDUFA extraction
-│   ├── sec_filings.py              # SEC general filings monitor (bounded FIFO cache)
-│   └── news_feed.py                # Pharma RSS news feed (bounded FIFO cache)
+│   ├── sec_filings.py              # SEC general filings monitor (persistent dedup)
+│   └── news_feed.py                # Pharma RSS news feed (persistent dedup)
 ├── data/
-│   └── seed_data.py                # 228 tickers + 32 curated events
+│   └── seed_data.py                # 294 tickers (no curated events — official sources only)
 ├── alembic/
 │   └── versions/
 │       └── 001_initial.py          # Initial migration (4 tables)
@@ -345,11 +346,11 @@ BASE_URL=https://pharma-edge.onrender.com
 
 | Operation | Response time | Notes |
 |---|---|---|
-| Dashboard load | <50ms | Fully cached, single query for prices |
+| Dashboard load | <50ms | 3 bulk queries, TTL-cached in memory (60s) |
 | Add ticker | <50ms | No sync CT.gov scrape |
 | Price refresh (1 ticker) | 200-500ms | yfinance dependent |
-| Full price cycle (228 tickers) | ~2 min | 0.5s delay between tickers |
-| CT.gov pipeline (228 tickers) | ~4 min | 1s delay between tickers |
+| Full price cycle (294 tickers) | ~2.5 min | 0.5s delay between tickers |
+| CT.gov pipeline (294 tickers) | ~5 min | 1s delay between tickers |
 | SEC feed (6 form types) | ~20s | 3s delay between feeds |
 | News feed (3 RSS sources) | ~3s | Parsed in parallel |
 
@@ -361,7 +362,7 @@ BASE_URL=https://pharma-edge.onrender.com
 - **Prices:** every 5 minutes
 - **PDUFA dates:** every 60 minutes
 - **SEC general filings:** every 30 minutes
-- **Pharma news:** every 15 minutes
+- **Pharma news:** every 60 minutes
 - **Clinical trials:** every 24 hours
 - **Alerts:** every 6 hours
 
@@ -372,7 +373,7 @@ BASE_URL=https://pharma-edge.onrender.com
 - **yfinance failure:** keeps existing price
 - **CT.gov failure:** retries in 24 hours
 - **SEC failure:** retries next cycle (30-60 min)
-- **News feed failure:** retries in 15 minutes
+- **News feed failure:** retries in 60 minutes
 
 ### How do I add tickers?
 Via API: `POST /api/tickers`. No "Add Ticker" button on the dashboard (read-only).
@@ -385,4 +386,4 @@ So Render can automatically restart the service if the database becomes unreacha
 
 ---
 
-*Last updated: 2026-07-24 — 228 tickers, 1000+ events, 5 Discord channels, PostgreSQL + Docker + Render*
+*Last updated: 2026-08-01 — 295 tickers, 1304 events (official sources only), API-key auth, TTL-cached dashboard, persistent scraper dedup, PostgreSQL + Docker + Render*

@@ -7,6 +7,7 @@ from sqlalchemy import and_
 
 from app.models.database import get_db, CatalystEvent, Ticker
 from app.models.schemas import EventCreate, EventResponse
+from app.utils.cache import dashboard_cache, stats_cache
 
 router = APIRouter(prefix="/api/events", tags=["events"])
 
@@ -51,6 +52,9 @@ def create_event(body: EventCreate, db: Session = Depends(get_db)):
     db.add(event)
     db.commit()
     db.refresh(event)
+
+    dashboard_cache.invalidate_all()
+    stats_cache.invalidate_all()
     return event
 
 
@@ -61,3 +65,6 @@ def delete_event(event_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Event not found")
     db.delete(obj)
     db.commit()
+
+    dashboard_cache.invalidate_all()
+    stats_cache.invalidate_all()

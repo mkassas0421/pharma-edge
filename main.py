@@ -21,6 +21,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, Response
 
 from app.config import settings
+from app.middleware.auth import api_key_middleware
 from app.middleware.rate_limit import rate_limit_middleware
 from app.models.database import init_db, SessionLocal
 from data.seed_data import seed_database
@@ -72,8 +73,11 @@ app = FastAPI(
 
 templates = Jinja2Templates(directory="app/templates")
 
-# Rate limiter for mutating API endpoints
+# In Starlette the LAST registered middleware is the OUTERMOST (runs first),
+# so auth goes last: unauthenticated mutating calls get 401 before the rate
+# limiter can count them toward the shared bucket.
 app.middleware("http")(rate_limit_middleware)
+app.middleware("http")(api_key_middleware)
 
 # API routes
 app.include_router(dashboard.router)

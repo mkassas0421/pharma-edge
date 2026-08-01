@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.models.database import get_db, Ticker, TickerAlias, CatalystEvent, PriceSnapshot
 from app.models.schemas import TickerCreate, TickerResponse
+from app.utils.cache import dashboard_cache, stats_cache
 from scrapers.clinical_trials import _scrape_company
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,8 @@ def create_ticker(body: TickerCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(ticker)
 
+    dashboard_cache.invalidate_all()
+    stats_cache.invalidate_all()
     return ticker
 
 
@@ -66,3 +69,6 @@ def delete_ticker(ticker: str, db: Session = Depends(get_db)):
 
     db.delete(obj)
     db.commit()
+
+    dashboard_cache.invalidate_all()
+    stats_cache.invalidate_all()

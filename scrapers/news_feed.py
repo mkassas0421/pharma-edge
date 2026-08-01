@@ -1,7 +1,8 @@
 """Pharma news feed — fetches latest articles from major biotech news RSS feeds.
 
 Articles are deduplicated by link URL and pushed to the ``#news-feed``
-Discord channel every 60 minutes.
+Discord channel every 60 minutes. Seen URLs persist in the
+``scraper_dedup`` table so a restart never re-notifies old articles.
 """
 
 import datetime
@@ -11,6 +12,7 @@ import re
 import feedparser
 
 from app.config import settings
+from app.models.database import SessionLocal
 from app.utils.collections import BoundedSet
 
 logger = logging.getLogger(__name__)
@@ -24,17 +26,23 @@ FEEDS = [
 ]
 
 _MAX_ENTRIES = 6               # recent entries per feed per run
+_DEDUP_SOURCE = "news_feed"
 _seen_urls = BoundedSet(maxsize=2000)
 
 
-def _fetch_feed(name: str, url: str) -> list[dict]:
-    """Parse one RSS feed and return entries with title, url, source, summary."""
+def _fetch_feed(name: str, url: str, db) -> list[dict]:
+    """Parse one RSS feed and return entries with title, url, source, summary.
+
+    Entries already seen (in-memory cache or persisted dedup) are skipped.
+    """
+    from scrapers.dedup import is_seen
+
     entries = []
     try:
         parsed = feedparser.parse(url)
         for entry in parsed.entries[:_MAX_ENTRIES]:
             link = (entry.get("link") or "").strip()
-            if not link or link in _seen_urls:
+            if not link or is_seen(db, _DEDUP_SOURCE, link, _seen_urls):
                 continue
 
             title_raw = (entry.get("title") or "Untitled").strip()
@@ -68,28 +76,40 @@ def run_news_feed():
         return
 
     from app.services.notifier import send_news_article
+    from scrapers.dedup import is_seen, mark_seen, prune_old
 
-    total_new = 0
+    db = SessionLocal()
+    try:
+        total_new = 0
 
-    for feed_name, feed_url in FEEDS:
-        articles = _fetch_feed(feed_name, feed_url)
-        for art in articles:
-            if art["url"] in _seen_urls:
-                continue
-            _seen_urls.add(art["url"])
+        for feed_name, feed_url in FEEDS:
+            articles = _fetch_feed(feed_name, feed_url, db)
+            for art in articles:
+                if is_seen(db, _DEDUP_SOURCE, art["url"], _seen_urls):
+                    continue  # persisted by an earlier run
+                mark_seen(db, _DEDUP_SOURCE, art["url"], _seen_urls)
 
-            ok = send_news_article(
-                title=art["title"],
-                url=art["url"],
-                source=art["source"],
-                summary=art["summary"],
-            )
-            if ok:
-                total_new += 1
-            else:
-                logger.warning("Failed to send news article: %s", art["title"][:60])
+                ok = send_news_article(
+                    title=art["title"],
+                    url=art["url"],
+                    source=art["source"],
+                    summary=art["summary"],
+                )
+                if ok:
+                    total_new += 1
+                else:
+                    logger.warning("Failed to send news article: %s", art["title"][:60])
 
-    if total_new:
-        logger.info("News feed: %d new article(s) sent", total_new)
-    else:
-        logger.debug("News feed: no new articles")
+        # Persist dedup markers + prune old ones (single transaction)
+        prune_old(db, _DEDUP_SOURCE)
+        db.commit()
+
+        if total_new:
+            logger.info("News feed: %d new article(s) sent", total_new)
+        else:
+            logger.debug("News feed: no new articles")
+    except Exception as exc:
+        logger.error("News feed error: %s", exc)
+        db.rollback()
+    finally:
+        db.close()

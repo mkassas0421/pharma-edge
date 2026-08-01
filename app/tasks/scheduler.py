@@ -12,6 +12,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from app.config import settings
 from app.models.database import SessionLocal, Ticker, CatalystEvent, PriceSnapshot
 from app.services.price_service import fetch_price_and_change
+from app.utils.cache import dashboard_cache, stats_cache
 from data.fallback_prices import FALLBACK_PRICES
 
 logger = logging.getLogger(__name__)
@@ -96,6 +97,8 @@ def refresh_prices():
             time.sleep(0.5)
 
         db.commit()
+        if updated:
+            dashboard_cache.invalidate_all()  # prices changed — drop cached dashboard
         logger.info("PriceSnapshot refreshed — %d tickers updated", updated)
     except Exception as exc:
         logger.error("Price refresh failed: %s", exc)
@@ -135,9 +138,15 @@ def check_alerts():
 
         logger.info("Found %d unsent event(s) within %d-day alert window", len(events), settings.alert_days_before)
 
+        # Pre-fetch company names in one query (avoids N+1 per event)
+        symbols = [ev.ticker for ev in events]
+        company_map = {
+            t.ticker: t.company_name
+            for t in db.query(Ticker).filter(Ticker.ticker.in_(symbols)).all()
+        }
+
         for ev in events:
-            ticker_obj = db.query(Ticker).filter(Ticker.ticker == ev.ticker).first()
-            company = ticker_obj.company_name if ticker_obj else ev.ticker
+            company = company_map.get(ev.ticker, ev.ticker)
             days_until = (ev.event_date - now).days
 
             ok = send_alert(
@@ -160,6 +169,37 @@ def check_alerts():
         db.commit()
     except Exception as exc:
         logger.error("Alert check failed: %s", exc)
+        db.rollback()
+    finally:
+        db.close()
+
+
+# ── Expired event cleanup ────────────────────────────────────────────────
+
+def prune_expired_events():
+    """Delete catalyst events older than 90 days.
+
+    Events are scraped with their official source links and only make sense
+    while upcoming; keeping past ones forever grows the DB for no value.
+    Runs daily; old events never re-alert (alert_sent is set on send).
+    """
+    PRUNE_AFTER_DAYS = 90
+    cutoff = datetime.datetime.utcnow() - datetime.timedelta(days=PRUNE_AFTER_DAYS)
+
+    db = SessionLocal()
+    try:
+        deleted = (
+            db.query(CatalystEvent)
+            .filter(CatalystEvent.event_date < cutoff)
+            .delete(synchronize_session="fetch")
+        )
+        db.commit()
+        if deleted:
+            dashboard_cache.invalidate_all()
+            stats_cache.invalidate_all()
+            logger.info("Pruned %d expired event(s) (older than %d days)", deleted, PRUNE_AFTER_DAYS)
+    except Exception as exc:
+        logger.error("Event pruning failed: %s", exc)
         db.rollback()
     finally:
         db.close()
@@ -196,6 +236,7 @@ def start_scheduler():
     scheduler.add_job(run_news_feed, "interval", minutes=60, id="news_feed", replace_existing=True)
     scheduler.add_job(run_federal_register_pipeline, "interval", hours=12, id="federal_register_pipeline", replace_existing=True)
     scheduler.add_job(run_fda_adcom_pipeline, "interval", hours=24, id="fda_adcom_pipeline", replace_existing=True)
+    scheduler.add_job(prune_expired_events, "interval", hours=24, id="prune_events", replace_existing=True)
 
     # ── Run-once on startup (with slight delays to spread load) ──
     scheduler.add_job(run_pdufa_pipeline, "date", run_date=datetime.datetime.utcnow() + datetime.timedelta(seconds=35), id="pdufa_pipeline_initial", replace_existing=True)

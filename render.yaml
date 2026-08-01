@@ -20,6 +20,12 @@ services:
       - key: DATABASE_URL
         sync: false  # mark as "secret" — typed manually in Dashboard
 
+      # ── Required: API key for mutating endpoints (X-API-Key header) ──
+      # Set this in the Render Dashboard BEFORE deploying — mutating
+      # endpoints are disabled while it is empty.
+      - key: API_KEY
+        sync: false
+
       # ── Optional: notification channels ──
       - key: TELEGRAM_BOT_TOKEN
         sync: false

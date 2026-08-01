@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     base_url: str = "http://localhost:8000"
     timezone: str = "America/New_York"  # US East Coast market time
 
+    # API key required on mutating endpoints (X-API-Key header).
+    # Empty = mutating endpoints disabled (fail closed).
+    api_key: str = ""
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

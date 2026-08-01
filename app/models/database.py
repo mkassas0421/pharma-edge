@@ -8,7 +8,7 @@ import datetime
 import logging
 from urllib.parse import urlparse
 
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text, Boolean, inspect, text
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text, Boolean, UniqueConstraint, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.config import settings
@@ -97,6 +97,28 @@ class TickerAlias(Base):
     ticker_id = Column(Integer, nullable=False, index=True)
     alias = Column(String(200), nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class ScraperDedup(Base):
+    """Persistent deduplication log for notification-only scrapers.
+
+    SEC filings and news articles are pushed to Discord but never stored
+    as events, so their in-memory ``BoundedSet`` markers vanished on
+    restart and old items were re-notified. This table survives restarts;
+    the in-memory set is kept as a fast-path cache on top of it.
+    """
+
+    __tablename__ = "scraper_dedup"
+
+    id = Column(Integer, primary_key=True, index=True)
+    source = Column(String(20), nullable=False, index=True)      # "sec_filings", "news_feed"
+    identifier = Column(String(500), nullable=False)             # accession number or URL
+    seen_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    __table_args__ = (
+        # One marker per source+identifier — no point re-checking twice
+        UniqueConstraint("source", "identifier", name="uq_scraper_dedup_source_identifier"),
+    )
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────

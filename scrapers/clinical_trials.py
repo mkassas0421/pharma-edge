@@ -197,7 +197,19 @@ def _study_to_event(study: dict, ticker: str, ticker_id: int) -> dict | None:
 
     # ── Sponsor ──
     sponsor_name = (sc.get("leadSponsor") or {}).get("name", "")
-    if not sponsor_name or not matches_ticker(ticker, sponsor_name):
+    if not sponsor_name:
+        return None
+    # A study may be run by a CRO with the pharma company listed as a
+    # collaborator — match the lead sponsor OR any collaborator.
+    collaborators = [
+        c.get("name", "")
+        for c in sc.get("collaborators", [])
+        if c.get("name")
+    ]
+    matched = matches_ticker(ticker, sponsor_name) or any(
+        matches_ticker(ticker, c) for c in collaborators
+    )
+    if not matched:
         return None
 
     # ── Phase ──

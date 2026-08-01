@@ -8,10 +8,11 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import and_, func
 
 from app.models.database import get_db, Ticker, CatalystEvent, PriceSnapshot
 from app.config import settings
+from app.utils.cache import dashboard_cache, stats_cache
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["dashboard"])
@@ -19,7 +20,15 @@ router = APIRouter(prefix="/api", tags=["dashboard"])
 
 @router.get("/dashboard")
 def get_dashboard(db: Session = Depends(get_db)):
-    """Return the dashboard: every ticker with its cached price and next catalyst event."""
+    """Return the dashboard: every ticker with its cached price and next catalyst event.
+
+    The result is cached in-memory for 60 s; mutating endpoints and the price
+    refresh invalidate it explicitly. Three bulk queries total, never N+1.
+    """
+    cached = dashboard_cache.get("dashboard")
+    if cached is not None:
+        return cached
+
     tickers = db.query(Ticker).order_by(Ticker.ticker).all()
     # Read all snapshots at once (one query, not N+1)
     snapshots = {
@@ -28,19 +37,37 @@ def get_dashboard(db: Session = Depends(get_db)):
     }
     now = datetime.datetime.utcnow()
 
+    # Batch-load the earliest future event per ticker in a single query
+    # (grouped by ticker + min date, then joined back for full details).
+    next_sub = (
+        db.query(
+            CatalystEvent.ticker,
+            func.min(CatalystEvent.event_date).label("min_date"),
+        )
+        .filter(CatalystEvent.event_date >= now)
+        .group_by(CatalystEvent.ticker)
+        .subquery()
+    )
+    next_rows = (
+        db.query(CatalystEvent)
+        .join(
+            next_sub,
+            and_(
+                CatalystEvent.ticker == next_sub.c.ticker,
+                CatalystEvent.event_date == next_sub.c.min_date,
+            ),
+        )
+        .all()
+    )
+    next_by_ticker: dict[str, CatalystEvent] = {}
+    for ev in next_rows:
+        if ev.ticker not in next_by_ticker:
+            next_by_ticker[ev.ticker] = ev
+
     rows: list[dict] = []
     for t in tickers:
         snap = snapshots.get(t.ticker)
-
-        next_event = (
-            db.query(CatalystEvent)
-            .filter(
-                CatalystEvent.ticker == t.ticker,
-                CatalystEvent.event_date >= now,
-            )
-            .order_by(CatalystEvent.event_date)
-            .first()
-        )
+        next_event = next_by_ticker.get(t.ticker)
 
         days_until = None
         if next_event:
@@ -61,12 +88,18 @@ def get_dashboard(db: Session = Depends(get_db)):
             "next_event_description": next_event.description if next_event else None,
         })
 
-    return {"rows": rows, "generated_at": now.isoformat()}
+    result = {"rows": rows, "generated_at": now.isoformat()}
+    dashboard_cache.set("dashboard", result)
+    return result
 
 
 @router.get("/dashboard/stats")
 def get_stats(db: Session = Depends(get_db)):
     """Return summary statistics for the dashboard header."""
+    cached = stats_cache.get("stats")
+    if cached is not None:
+        return cached
+
     now = datetime.datetime.utcnow()
     alert_window = now + datetime.timedelta(days=settings.alert_days_before)
 
@@ -87,11 +120,13 @@ def get_stats(db: Session = Depends(get_db)):
         or 0
     )
 
-    return {
+    result = {
         "total_tickers": total,
         "upcoming_events": upcoming,
         "alerting_events": alerting,
     }
+    stats_cache.set("stats", result)
+    return result
 
 
 @router.post("/test-notify")

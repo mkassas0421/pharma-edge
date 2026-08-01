@@ -33,12 +33,21 @@ def seed_aliases():
         # ── Extra subsidiary aliases for large pharma ──
         # Only added if the subsidiary itself is NOT a tracked ticker (avoid dupes)
         _EXTRA_ALIASES: dict[str, list[str]] = {
-            "JNJ": ["Janssen Research", "Janssen Pharmaceutica", "Janssen Research & Development"],
+            "JNJ": ["Janssen Research", "Janssen Pharmaceutica", "Janssen Research & Development", "Janssen Biotech"],
             "PFE": ["Wyeth", "Pharmacia", "Hospira"],
-            "MRK": ["Merck Sharp & Dohme", "MSD"],
-            "NVS": ["Sandoz", "Novartis Institutes"],
-            "AZN": ["MedImmune", "Acerta Pharma"],
-            "SNY": ["Genzyme", "Sanofi Pasteur"],
+            "MRK": ["Merck Sharp & Dohme", "MSD", "Merck Research Laboratories"],
+            "NVS": ["Sandoz", "Novartis Institutes", "Novartis Pharma", "Novartis Vaccines"],
+            "AZN": ["MedImmune", "Acerta Pharma", "Alexion Pharmaceuticals"],
+            "SNY": ["Genzyme", "Sanofi Pasteur", "Sanofi Aventis"],
+            "LLY": ["Eli Lilly Research Laboratories", "Lilly Research", "Lilly USA"],
+            "BMY": ["Bristol Myers Squibb Research", "Celgene"],
+            "ABBV": ["Abbott Laboratories"],  # historical parent
+            "AMGN": ["Amgen Research"],
+            "GILD": ["Gilead Sciences Inc", "Kite Pharma"],
+            "NVO": ["Novo Nordisk Research"],
+            "TAK": ["Takeda Development Center", "Takeda Oncology", "Millennium Pharmaceuticals"],
+            "REGN": ["Regeneron Genetics Center"],
+            "BIIB": ["Biogen Research"],
         }
 
         for t in tickers:
@@ -94,9 +103,30 @@ def _get_aliases(ticker: str) -> list[str]:
 
 
 def _clean_tokens(text: str) -> list[str]:
-    """Split, strip punctuation, remove noise words."""
-    noise = {"inc", "inc.", "ltd", "ltd.", "plc", "corp", "corp.",
-             "corporation", "sa", "n.v.", "s.a.", "gmbh", "llc", "co."}
+    """Split, strip punctuation, remove noise words.
+
+    The list covers corporate suffixes (Inc, PLC, GmbH…), industry-generic
+    words (research, therapeutics, biotech…) and connectors. Without these,
+    "Eli Lilly Research Laboratories" would only 50%-overlap "Eli Lilly and
+    Company" and legitimately fail to match. Note: "N.V." / "S.A." arrive as
+    bare "n v" / "s a" after punctuation stripping, so the single letters
+    are noise too.
+    """
+    noise = {
+        # corporate suffixes
+        "inc", "inc.", "ltd", "ltd.", "plc", "corp", "corp.", "corporation",
+        "sa", "n.v.", "s.a.", "gmbh", "llc", "co.", "limited", "holdings",
+        "holding", "group", "company", "international",
+        # single letters left over from dotted suffixes
+        "n", "v", "s", "a",
+        # connectors
+        "and", "the", "of", "for", "&",
+        # industry-generic descriptors
+        "research", "laboratories", "labs", "pharmaceuticals", "therapeutics",
+        "biosciences", "bioscience", "biotech", "biotechnology", "biopharma",
+        "biopharmaceutical", "pharma", "pharmaceutical", "sciences",
+        "healthcare", "medical", "medicine", "oncology",
+    }
     stripped = re.sub(r"[^\w\s]", " ", text)
     return [w for w in stripped.lower().split() if w not in noise]
 
@@ -126,7 +156,10 @@ def matches_ticker(ticker: str, sponsor_name: str) -> bool:
         if norm_alias == norm_name:
             return True
 
-    # 2. Token overlap >= 60%
+    # 2. Token overlap >= 50%
+    # The expanded noise list above removes most industry-generic words, so
+    # remaining tokens are distinctive — 50% is enough for a genuine match
+    # while staying below the 60% that rejected "Eli Lilly Research Labs".
     name_tokens = _clean_tokens(sponsor_name)
     for alias in aliases:
         alias_tokens = _clean_tokens(alias)
@@ -134,7 +167,7 @@ def matches_ticker(ticker: str, sponsor_name: str) -> bool:
             continue
         matches = sum(1 for w in alias_tokens if w in name_tokens)
         score = (matches / max(len(alias_tokens), len(name_tokens))) * 100
-        if score >= 60:
+        if score >= 50:
             return True
 
     return False
