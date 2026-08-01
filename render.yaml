@@ -26,6 +26,10 @@ services:
       - key: API_KEY
         sync: false
 
+      # ── Optional: error tracking (https://sentry.io → create project) ──
+      - key: SENTRY_DSN
+        sync: false
+
       # ── Optional: notification channels ──
       - key: TELEGRAM_BOT_TOKEN
         sync: false

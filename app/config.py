@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     # Empty = mutating endpoints disabled (fail closed).
     api_key: str = ""
 
+    # Sentry DSN for error tracking (empty = disabled, e.g. local dev)
+    sentry_dsn: str = ""
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

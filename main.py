@@ -63,6 +63,32 @@ async def lifespan(app: FastAPI):
     stop_scheduler()
 
 
+# ── Error tracking (Sentry) — only active when SENTRY_DSN is set ───────────
+
+if settings.sentry_dsn:
+    import sentry_sdk
+
+
+    def _before_send(event, hint):
+        """Drop expected client-rejection noise (401/429) — not app bugs."""
+        exc_info = hint.get("exc_info")
+        if exc_info:
+            exc = exc_info[1]
+            status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
+            if status in (401, 429):
+                return None
+        return event
+
+
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        traces_sample_rate=0.0,  # errors only — keeps the free tier generous
+        environment="production",
+        before_send=_before_send,
+    )
+    logger.info("Sentry error tracking enabled")
+
+
 # ── App ─────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
@@ -106,10 +132,24 @@ def health():
         db_ok = True
     except Exception:
         db_ok = False
+
+    # Report when the background jobs are next due — uptime monitors can see
+    # whether the scheduler is alive, not just the HTTP layer.
+    jobs_info = {}
+    try:
+        from app.tasks.scheduler import scheduler
+        jobs_info = {
+            job.id: job.next_run_time.isoformat() if job.next_run_time else None
+            for job in scheduler.get_jobs()
+        }
+    except Exception:
+        pass  # scheduler not started yet / introspection unavailable — non-fatal
+
     return {
         "status": "ok" if db_ok else "degraded",
         "database": "connected" if db_ok else "unreachable",
         "timestamp": datetime.datetime.utcnow().isoformat(),
+        "scheduler_jobs": jobs_info,
     }
 
 

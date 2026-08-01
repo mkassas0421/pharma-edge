@@ -379,11 +379,31 @@ BASE_URL=https://pharma-edge.onrender.com
 Via API: `POST /api/tickers`. No "Add Ticker" button on the dashboard (read-only).
 
 ### Is the API rate-limited?
-Yes — mutating endpoints (POST, DELETE on `/api/`) are limited to **30 requests per 60 seconds per IP**. Read endpoints are unrestricted.
+Yes — mutating endpoints (POST, DELETE on `/api/`) are limited to **30 requests per 60 seconds per IP** (real IP via `X-Forwarded-For`). Read endpoints are unrestricted.
 
 ### Why does the health check probe the database?
-So Render can automatically restart the service if the database becomes unreachable. `/health` returns `{"status": "degraded", "database": "unreachable"}` on failure.
+So Render can automatically restart the service if the database becomes unreachable. `/health` returns `{"status": "degraded", "database": "unreachable"}` on failure, plus a `scheduler_jobs` map with the next run time of every background job.
 
 ---
 
-*Last updated: 2026-08-01 — 295 tickers, 1304 events (official sources only), API-key auth, TTL-cached dashboard, persistent scraper dedup, PostgreSQL + Docker + Render*
+## Testing & CI
+
+The repository has a **48-test pytest suite** covering auth, rate limiting, the dashboard query plan + cache, persistent dedup, NCT matching, event pruning, the API, and the scrapers (with mocked network calls).
+
+```bash
+pip install pytest
+python -m pytest tests/ -v
+```
+
+Tests run on SQLite with a throwaway database — they never touch production data and never hit external APIs. The same suite runs automatically on every push via **GitHub Actions** (see `.github/workflows/ci.yml`).
+
+---
+
+## Monitoring
+
+- **Error tracking — Sentry:** all unhandled exceptions and ERROR-level logs are reported when `SENTRY_DSN` is set (401/429 client rejections are filtered out). Setup: create a project at https://sentry.io → copy the DSN → add it as `SENTRY_DSN` in the Render Dashboard → redeploy. Free tier (5k events/month) is plenty.
+- **Uptime — UptimeRobot:** create a monitor for `https://pharma-edge.onrender.com/health` with a 5-minute interval. The `/health` response includes `scheduler_jobs`, so a monitor that checks the JSON body can detect not just a dead server but a dead scheduler (no `next_run` values).
+
+---
+
+*Last updated: 2026-08-01 — 295 tickers, 1304 events (official sources only), API-key auth, TTL-cached dashboard, persistent scraper dedup, 48 tests + CI, Sentry monitoring, PostgreSQL + Docker + Render*

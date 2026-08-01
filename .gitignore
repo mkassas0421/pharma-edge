@@ -15,6 +15,7 @@ build/
 *.sqlite
 data/*.db
 data/*.sqlite
+tests/_ci.db
 
 # ── IDE / OS ──
 .vscode/
