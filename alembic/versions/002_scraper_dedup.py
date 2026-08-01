@@ -1,6 +1,6 @@
 """Add scraper_dedup table — persistent dedup for notification-only scrapers.
 
-Revises: 001_initial
+Revises: 002_add_source_url_verified
 """
 from typing import Sequence, Union
 
@@ -8,7 +8,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision: str = "002_scraper_dedup"
-down_revision: Union[str, None] = "001_initial"
+down_revision: Union[str, None] = "002_add_source_url_verified"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
