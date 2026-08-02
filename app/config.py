@@ -28,6 +28,15 @@ class Settings(BaseSettings):
     # Sentry DSN for error tracking (empty = disabled, e.g. local dev)
     sentry_dsn: str = ""
 
+    # Reaction capture: how many CALENDAR days after an event_date must pass
+    # before we attempt to record its price reaction. Needs to cover T+5
+    # trading days (~7-9 calendar days for a Friday event) plus margin.
+    reaction_capture_min_days: int = 10
+
+    # Minimum number of captured reactions before aggregate stats are shown
+    # without a low-sample warning.
+    reaction_min_sample_size: int = 5
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

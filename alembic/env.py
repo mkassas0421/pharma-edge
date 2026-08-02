@@ -20,7 +20,13 @@ if config.config_file_name is not None:
 from app.models.database import Base  # noqa: E402
 
 # Import ALL models so they register on Base.metadata
-from app.models.database import Ticker, CatalystEvent, PriceSnapshot, TickerAlias  # noqa: E402, F401
+from app.models.database import (  # noqa: E402, F401
+    Ticker,
+    CatalystEvent,
+    PriceSnapshot,
+    TickerAlias,
+    EventReaction,
+)
 
 target_metadata = Base.metadata
 

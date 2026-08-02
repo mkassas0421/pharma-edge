@@ -121,6 +121,46 @@ class ScraperDedup(Base):
     )
 
 
+class EventReaction(Base):
+    """Actual price reaction recorded after a catalyst event date.
+
+    Captured automatically by the background scheduler once enough trading
+    days have elapsed after ``event_date``. The reaction row denormalises
+    ticker / event_type / impact_level so aggregate stats survive even if
+    the original event is later pruned (reaction data stays valuable).
+    """
+
+    __tablename__ = "event_reactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_id = Column(Integer, nullable=False, index=True)      # catalyst_events.id (no FK — codebase convention)
+    ticker = Column(String(10), nullable=False, index=True)     # denormalised from catalyst_events
+
+    # Snapshot prices (yfinance closes around the event date)
+    price_before = Column(Float, nullable=True)                 # close, last trading day before event
+    price_at_event = Column(Float, nullable=True)               # close, first trading day on/after event_date
+    price_after_1d = Column(Float, nullable=True)               # close, 1 trading day after event
+    price_after_5d = Column(Float, nullable=True)               # close, 5 trading days after event
+
+    # Computed reactions (fraction, e.g. 0.183 = +18.3%)
+    reaction_1d_pct = Column(Float, nullable=True)              # (price_at_event - price_before) / price_before
+    reaction_5d_pct = Column(Float, nullable=True)              # (price_after_5d - price_before) / price_before
+
+    # Metadata for aggregation (copied at capture time)
+    event_type = Column(String(50), nullable=True, index=True)
+    impact_level = Column(String(10), nullable=True, index=True)
+    indication = Column(String(100), nullable=True, default=None)  # reserved — no source yet
+
+    status = Column(String(20), default="pending")              # pending | captured | failed
+    captured_at = Column(DateTime, nullable=True, default=None)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    __table_args__ = (
+        # One reaction per event — no point re-measuring twice
+        UniqueConstraint("event_id", name="uq_event_reactions_event_id"),
+    )
+
+
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
 def get_db():
