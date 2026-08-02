@@ -29,7 +29,7 @@ from scrapers.company_map import seed_aliases
 from scripts.cleanup_fabricated_events import cleanup as cleanup_fabricated
 from scripts.backfill_source_urls import backfill as backfill_source_urls
 
-from app.routes import dashboard, tickers, events
+from app.routes import dashboard, tickers, events, reactions
 from app.tasks.scheduler import start_scheduler, stop_scheduler
 
 
@@ -109,6 +109,7 @@ app.middleware("http")(api_key_middleware)
 app.include_router(dashboard.router)
 app.include_router(tickers.router)
 app.include_router(events.router)
+app.include_router(reactions.router)
 
 
 # ── Frontend route ──────────────────────────────────────────────────────────

@@ -52,6 +52,42 @@ class EventResponse(BaseModel):
         from_attributes = True
 
 
+# ── Event Reaction ─────────────────────────────────────────────────────────
+
+class EventReactionResponse(BaseModel):
+    id: int
+    event_id: int
+    ticker: str
+    price_before: float | None = None
+    price_at_event: float | None = None
+    price_after_1d: float | None = None
+    price_after_5d: float | None = None
+    reaction_1d_pct: float | None = None
+    reaction_5d_pct: float | None = None
+    event_type: str | None = None
+    impact_level: str | None = None
+    indication: str | None = None
+    status: str
+    captured_at: datetime.datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class ReactionStatsResponse(BaseModel):
+    n: int
+    mean_1d_pct: float | None = None
+    median_1d_pct: float | None = None
+    stdev_1d_pct: float | None = None
+    mean_5d_pct: float | None = None
+    median_5d_pct: float | None = None
+    stdev_5d_pct: float | None = None
+    positive_rate_1d: float | None = None
+    max_1d_pct: float | None = None
+    min_1d_pct: float | None = None
+    low_sample_warning: bool = False
+
+
 # ── Dashboard (ticker + current price + next event) ─────────────────────────
 
 class DashboardRow(BaseModel):
