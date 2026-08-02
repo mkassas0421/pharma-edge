@@ -10,7 +10,7 @@ import time
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.config import settings
-from app.models.database import SessionLocal, Ticker, CatalystEvent, PriceSnapshot
+from app.models.database import SessionLocal, Ticker, CatalystEvent, PriceSnapshot, EventReaction
 from app.services.price_service import fetch_price_and_change
 from app.utils.cache import dashboard_cache, stats_cache
 from data.fallback_prices import FALLBACK_PRICES
@@ -177,20 +177,36 @@ def check_alerts():
 # ── Expired event cleanup ────────────────────────────────────────────────
 
 def prune_expired_events():
-    """Delete catalyst events older than 90 days.
+    """Delete old catalyst events — but only once their reaction is settled.
 
     Events are scraped with their official source links and only make sense
     while upcoming; keeping past ones forever grows the DB for no value.
+    A past event is deletable once its EventReaction row is final (captured
+    or failed) — the reaction carries the data forward (denormalised fields).
+    Events older than a year without any reaction are dead weight too.
+    This guard matters for the historical backfill: events years old must
+    not vanish before their reaction has been captured.
     Runs daily; old events never re-alert (alert_sent is set on send).
     """
     PRUNE_AFTER_DAYS = 90
+    ANCIENT_AFTER_DAYS = 365
     cutoff = datetime.datetime.utcnow() - datetime.timedelta(days=PRUNE_AFTER_DAYS)
+    ancient_cutoff = datetime.datetime.utcnow() - datetime.timedelta(days=ANCIENT_AFTER_DAYS)
 
     db = SessionLocal()
     try:
+        reacted_ids = (
+            db.query(EventReaction.event_id)
+            .filter(EventReaction.status.in_(["captured", "failed"]))
+            .subquery()
+        )
         deleted = (
             db.query(CatalystEvent)
             .filter(CatalystEvent.event_date < cutoff)
+            .filter(
+                CatalystEvent.id.in_(reacted_ids)
+                | (CatalystEvent.event_date < ancient_cutoff)
+            )
             .delete(synchronize_session="fetch")
         )
         db.commit()
