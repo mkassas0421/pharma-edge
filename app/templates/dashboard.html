@@ -558,16 +558,22 @@
           el.innerHTML = '<span class="text-gray-500">No similar events captured yet — data appears ~10 days after events mature.</span>';
           return;
         }
-        // Spell out the actual filters instead of "similar events"
+        // Spell out the actual cohort — which tier produced the sample
         const typeLabel = eventTypePlural(row.next_event_type);
-        const filterDesc = typeLabel
-          ? `similar ${row.impact_level ? row.impact_level.toLowerCase() + '-impact ' : ''}${typeLabel}`
-          : 'similar catalysts';
+        const safeTicker = escapeHtml(row.ticker);
+        let cohort;
+        if (s.sample_source === 'ticker_type') {
+          cohort = `prior ${typeLabel || 'events'} for <b>${safeTicker}</b>`;
+        } else if (s.sample_source === 'ticker') {
+          cohort = `prior catalysts for <b>${safeTicker}</b> (all types)`;
+        } else {
+          cohort = `similar ${row.impact_level ? row.impact_level.toLowerCase() + '-impact ' : ''}${typeLabel || 'catalysts'} market-wide`;
+        }
         const sample = s.low_sample_warning
           ? ' <span class="text-xs text-amber-400 border border-amber-500/30 rounded-full px-2 py-0.5" title="Fewer than 5 similar events">small sample</span>'
           : '';
 
-        let html = `<div class="text-sm text-gray-300">Across <b>${s.n}</b> ${filterDesc}${sample},`;
+        let html = `<div class="text-sm text-gray-300">Across <b>${s.n}</b> ${cohort}${sample},`;
         const mean = reactionPct(s.mean_1d_pct);
         if (mean !== null) {
           const cls = mean >= 0 ? 'text-emerald-400' : 'text-rose-400';

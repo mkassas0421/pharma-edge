@@ -86,6 +86,9 @@ class ReactionStatsResponse(BaseModel):
     max_1d_pct: float | None = None
     min_1d_pct: float | None = None
     low_sample_warning: bool = False
+    # Which filter set produced this sample (set by the /stats/similar
+    # endpoint): "ticker_type" (default) / "ticker" / "market_cohort"
+    sample_source: str = "market_cohort"
 
 
 # ── Dashboard (ticker + current price + next event) ─────────────────────────

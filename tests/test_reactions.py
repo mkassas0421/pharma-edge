@@ -308,7 +308,7 @@ def test_stats_route_filtered(client, db, seed_tickers):
 
 
 def test_stats_similar(client, db, seed_tickers):
-    """Similar endpoint filters by the event's impact_level + event_type."""
+    """Similar endpoint falls back to the market cohort when the ticker has no data."""
     event = _add_event(db, event_type="PHASE3_READOUT", impact_level="Medium",
                        event_date=datetime.datetime.utcnow() - datetime.timedelta(days=30))
     same = _add_event(db, ticker="CRIS", event_type="PHASE3_READOUT", impact_level="Medium",
@@ -323,6 +323,51 @@ def test_stats_similar(client, db, seed_tickers):
     body = resp.json()
     assert body["n"] == 1
     assert body["mean_1d_pct"] == pytest.approx(0.1, abs=1e-4)
+    # No LLY reactions at all → last tier (market cohort) wins
+    assert body["sample_source"] == "market_cohort"
+
+
+def test_stats_similar_ticker_type_priority(client, db, seed_tickers):
+    """Same ticker + same event type wins once it has enough samples."""
+    event = _add_event(db, event_type="PDUFA", impact_level="High",
+                       event_date=datetime.datetime.utcnow() - datetime.timedelta(days=30))
+    for i in range(5):
+        e = _add_event(db, ticker="LLY", event_type="PDUFA", impact_level="High",
+                       event_date=datetime.datetime.utcnow() - datetime.timedelta(days=60 + i))
+        _add_reaction(db, e, status="captured", reaction_1d_pct=0.1 + i * 0.01)
+    # Different ticker, same type — must NOT leak into the ticker_type cohort
+    other = _add_event(db, ticker="CRIS", event_type="PDUFA", impact_level="High",
+                       event_date=datetime.datetime.utcnow() - datetime.timedelta(days=60))
+    _add_reaction(db, other, status="captured", reaction_1d_pct=0.9)
+
+    resp = client.get(f"/api/reactions/stats/similar/{event.id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["sample_source"] == "ticker_type"
+    assert body["n"] == 5
+    assert body["low_sample_warning"] is False
+
+
+def test_stats_similar_ticker_fallback(client, db, seed_tickers):
+    """Same ticker across types wins when ticker+type has too few samples."""
+    event = _add_event(db, event_type="PDUFA", impact_level="High",
+                       event_date=datetime.datetime.utcnow() - datetime.timedelta(days=30))
+    # 2 PDUFA + 2 PHASE3 + 1 REGULATORY for LLY → 5 total, but only 2 PDUFA
+    specs = [
+        ("PDUFA", 0.1), ("PDUFA", 0.2),
+        ("PHASE3_READOUT", -0.1), ("PHASE3_READOUT", 0.05),
+        ("REGULATORY", 0.3),
+    ]
+    for i, (etype, pct) in enumerate(specs):
+        e = _add_event(db, ticker="LLY", event_type=etype, impact_level="High",
+                       event_date=datetime.datetime.utcnow() - datetime.timedelta(days=60 + i))
+        _add_reaction(db, e, status="captured", reaction_1d_pct=pct)
+
+    resp = client.get(f"/api/reactions/stats/similar/{event.id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["sample_source"] == "ticker"
+    assert body["n"] == 5
 
 
 def test_stats_similar_event_not_found(client, seed_tickers):
