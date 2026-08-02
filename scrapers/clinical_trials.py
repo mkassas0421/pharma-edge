@@ -174,10 +174,14 @@ def _scrape_company(ticker: str, ticker_id: int) -> list[dict]:
     return events
 
 
-def _study_to_event(study: dict, ticker: str, ticker_id: int) -> dict | None:
+def _study_to_event(study: dict, ticker: str, ticker_id: int,
+                    min_event_date: datetime.datetime | None = None) -> dict | None:
     """Convert an API study to a CatalystEvent dict, or None if irrelevant.
 
     Produces a structured ``description`` so the frontend modal works.
+    Events before ``min_event_date`` are rejected; the default keeps the
+    scraper forward-looking (90 days back), while the historical backfill
+    passes an explicit 2020-01-01 floor.
     """
     proto = study.get("protocolSection", {})
     ident = proto.get("identificationModule", {})
@@ -231,7 +235,8 @@ def _study_to_event(study: dict, ticker: str, ticker_id: int) -> dict | None:
         return None
 
     now = datetime.datetime.utcnow()
-    if ev_date < now - datetime.timedelta(days=90):
+    cutoff = min_event_date or (now - datetime.timedelta(days=90))
+    if ev_date < cutoff:
         return None
 
     # ── Build structured description ──
