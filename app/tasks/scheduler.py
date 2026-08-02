@@ -229,6 +229,7 @@ def start_scheduler():
     from scrapers.federal_register import run_federal_register_pipeline
     from scrapers.fda_adcom import run_fda_adcom_pipeline
     from app.services.notifier import send_morning_briefing, send_evening_briefing
+    from app.services.reaction_service import capture_reactions_for_matured_events
 
     scheduler.add_job(ct_pipeline, "interval", hours=24, id="clinical_trials_pipeline", replace_existing=True)
     scheduler.add_job(run_pdufa_pipeline, "interval", minutes=60, id="pdufa_pipeline", replace_existing=True)
@@ -237,12 +238,16 @@ def start_scheduler():
     scheduler.add_job(run_federal_register_pipeline, "interval", hours=12, id="federal_register_pipeline", replace_existing=True)
     scheduler.add_job(run_fda_adcom_pipeline, "interval", hours=24, id="fda_adcom_pipeline", replace_existing=True)
     scheduler.add_job(prune_expired_events, "interval", hours=24, id="prune_events", replace_existing=True)
+    scheduler.add_job(capture_reactions_for_matured_events, "interval", hours=24, id="capture_event_reactions", replace_existing=True)
 
     # ── Run-once on startup (with slight delays to spread load) ──
     scheduler.add_job(run_pdufa_pipeline, "date", run_date=datetime.datetime.utcnow() + datetime.timedelta(seconds=35), id="pdufa_pipeline_initial", replace_existing=True)
     scheduler.add_job(ct_pipeline, "date", run_date=datetime.datetime.utcnow() + datetime.timedelta(seconds=30), id="clinical_trials_pipeline_initial", replace_existing=True)
     scheduler.add_job(run_federal_register_pipeline, "date", run_date=datetime.datetime.utcnow() + datetime.timedelta(seconds=45), id="federal_register_pipeline_initial", replace_existing=True)
     scheduler.add_job(run_fda_adcom_pipeline, "date", run_date=datetime.datetime.utcnow() + datetime.timedelta(seconds=55), id="fda_adcom_pipeline_initial", replace_existing=True)
+    # Reaction capture runs after the above — the first backfill (~600 events)
+    # must not collide with the startup pipelines
+    scheduler.add_job(capture_reactions_for_matured_events, "date", run_date=datetime.datetime.utcnow() + datetime.timedelta(seconds=65), id="capture_event_reactions_initial", replace_existing=True)
 
     # ── Daily briefings ──
     if settings.discord_webhook_briefing:
