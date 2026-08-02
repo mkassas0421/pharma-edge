@@ -3,6 +3,7 @@
 No caching or fallback logic here: the scheduler handles persistence via PriceSnapshot.
 """
 
+import datetime
 import logging
 
 import yfinance as yf
@@ -55,3 +56,59 @@ def fetch_price_and_change(ticker: str) -> tuple[float | None, float | None]:
     except Exception as exc:
         logger.debug("Error fetching %s: %s", ticker, exc)
         return None, None
+
+
+def get_historical_prices(ticker: str, event_date: datetime.datetime) -> dict:
+    """Fetch T-1 / T / T+1 / T+5 trading-day closes around ``event_date``.
+
+    Returns a dict with keys: price_before, price_at_event, price_after_1d,
+    price_after_5d. Missing days (event too recent, fetch failure, delisted
+    ticker) come back as ``None`` — the caller decides how to handle them.
+
+    The anchor is the first trading day on/after ``event_date`` (yfinance
+    history() only contains trading days, so weekend/holiday events naturally
+    land on the next market open). Offsets are then applied by position.
+    """
+    result = {
+        "price_before": None,
+        "price_at_event": None,
+        "price_after_1d": None,
+        "price_after_5d": None,
+    }
+    try:
+        # Calendar-day window around the event; end is exclusive in yfinance,
+        # so +15 days leaves room for T+5 even across holiday-heavy stretches.
+        start = event_date - datetime.timedelta(days=10)
+        end = event_date + datetime.timedelta(days=15)
+        hist = _make_ticker(ticker).history(start=start.date(), end=end.date())
+        if hist is None or hist.empty:
+            logger.debug("%s: no history around %s", ticker, event_date.date())
+            return result
+
+        closes = hist["Close"]
+        # yfinance returns a tz-aware DatetimeIndex — compare by calendar date
+        dates = [ts.to_pydatetime().date() for ts in hist.index]
+
+        # Anchor: first trading day on/after the event date
+        anchor = None
+        target = event_date.date()
+        for i, d in enumerate(dates):
+            if d >= target:
+                anchor = i
+                break
+
+        def close_at(i):
+            if 0 <= i < len(closes):
+                value = float(closes.iloc[i])
+                return value if value and value > 0 else None
+            return None
+
+        if anchor is not None:
+            result["price_before"] = close_at(anchor - 1)
+            result["price_at_event"] = close_at(anchor)
+            result["price_after_1d"] = close_at(anchor + 1)
+            result["price_after_5d"] = close_at(anchor + 5)
+        return result
+    except Exception as exc:
+        logger.debug("Error fetching history for %s: %s", ticker, exc)
+        return result
