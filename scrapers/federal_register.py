@@ -64,27 +64,42 @@ def _extract_meeting_date(text: str) -> datetime.datetime | None:
     return _parse_date(candidate)
 
 
-def _fetch_documents() -> list[dict]:
-    """Fetch FDA 'Notice of Meeting' documents from the last LOOKBACK_DAYS."""
-    since = (datetime.datetime.utcnow() - datetime.timedelta(days=LOOKBACK_DAYS)).strftime("%m/%d/%Y")
+def _fetch_documents(since: str | None = None, until: str | None = None,
+                     page: int | None = None, per_page: int = MAX_DOCS,
+                     order: str = "newest") -> tuple[list[dict], int]:
+    """Fetch FDA 'Notice of Meeting' documents.
+
+    Returns (documents, total_pages). Without *since* the last LOOKBACK_DAYS
+    are used (forward pipeline); the backfill passes explicit windows and
+    paginates with the plain ``page`` param.
+    """
+    if since is None:
+        since = (datetime.datetime.utcnow() - datetime.timedelta(days=LOOKBACK_DAYS)).strftime("%m/%d/%Y")
     params = {
         "conditions[agencies][]": "food-and-drug-administration",
         "conditions[type][]": "NOTICE",
         "conditions[term]": "notice of meeting",
         "conditions[publication_date][gte]": since,
-        "per_page": MAX_DOCS,
-        "order": "newest",
+        "per_page": per_page,
+        "order": order,
         "fields[]": _PAGE_FIELDS,  # httpx encodes lists as repeated fields[]=... params
     }
+    if until:
+        params["conditions[publication_date][lte]"] = until
+    if page is not None:
+        params["page"] = page
     all_docs: list[dict] = []
+    total_pages = 1
     try:
         with httpx.Client(timeout=25) as client:
             resp = client.get(FEDERAL_REGISTER_API, params=params)
             resp.raise_for_status()
-            all_docs = resp.json().get("results", [])
+            body = resp.json()
+            all_docs = body.get("results", [])
+            total_pages = body.get("total_pages", 1)
     except Exception as exc:
         logger.warning("Federal Register fetch failed: %s", exc)
-    return all_docs
+    return all_docs, total_pages
 
 
 def _fetch_body_xml(xml_url: str) -> str | None:
@@ -163,8 +178,13 @@ def _matches_any(text: str, aliases_by_ticker: dict) -> list[str]:
     return hits
 
 
-def _doc_to_events(doc: dict, body_text: str, aliases_by_ticker: dict) -> list[dict]:
-    """Convert a meeting-notice document into event dicts (one per ticker)."""
+def _doc_to_events(doc: dict, body_text: str, aliases_by_ticker: dict,
+                   allow_past: bool = False) -> list[dict]:
+    """Convert a meeting-notice document into event dicts (one per ticker).
+
+    The forward pipeline only creates events for upcoming meetings; the
+    historical backfill passes ``allow_past=True``.
+    """
     title = doc.get("title", "")
     abstract = doc.get("abstract", "")
     html_url = doc.get("html_url", "")
@@ -178,8 +198,8 @@ def _doc_to_events(doc: dict, body_text: str, aliases_by_ticker: dict) -> list[d
         logger.debug("FR %s: no meeting date found", doc_number)
         return []
 
-    # Only forward-looking meetings become catalysts.
-    if meeting_date < datetime.datetime.utcnow():
+    # Only forward-looking meetings become catalysts (backfill: allow_past).
+    if not allow_past and meeting_date < datetime.datetime.utcnow():
         return []
 
     # Match tickers — prefer title/abstract (strong signal), else full body.
@@ -225,13 +245,14 @@ def run_pipeline():
 
         alias_rows = db.query(TickerAlias).all()
         ticker_by_id = {t.id: t.ticker for t in tickers}
+        ticker_id_by_ticker = {t.ticker: t.id for t in tickers}
         aliases_by_ticker: dict = {}
         for row in alias_rows:
             t = ticker_by_id.get(row.ticker_id)
             if t:
                 aliases_by_ticker.setdefault(t, []).append(row.alias)
 
-        docs = _fetch_documents()
+        docs, _ = _fetch_documents()
         if not docs:
             logger.warning("Federal Register: no documents fetched")
             return
@@ -261,6 +282,7 @@ def run_pipeline():
                         existing.verified = True
                         total_upd += 1
                 else:
+                    ev_data["ticker_id"] = ticker_id_by_ticker[ev_data["ticker"]]  # NOT NULL column
                     db.add(CatalystEvent(**ev_data))
                     total_new += 1
             if i < len(docs) - 1:

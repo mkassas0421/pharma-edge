@@ -116,6 +116,49 @@ def test_news_feed_disabled_without_webhook(seed_tickers, db, monkeypatch):
     assert news.run_news_feed() is None
 
 
+# ── Federal Register: allow_past (historical AdCom backfill) ─────────────────
+
+_FR_CAPR_DOC = {
+    "document_number": "2026-13096",
+    "title": "Cellular, Tissue, and Gene Therapies Advisory Committee; Notice of Meeting; "
+             "Establishment of a Public Docket; Request for Comments-Biologics License "
+             "Application (BLA) 125842 From Capricor, Inc. for Deramiocel",
+    "abstract": "The Food and Drug Administration (FDA) announces a public meeting of the "
+                 "Cellular, Tissue, and Gene Therapies Advisory Committee to discuss BLA 125842 "
+                 "From Capricor, Inc. for Deramiocel.",
+    "html_url": "https://www.federalregister.gov/documents/2026/06/29/2026-13096/x",
+    "publication_date": "2026-06-29",
+}
+_FR_CAPR_BODY = ("DATES: The meeting will be held on July 29, 2026, from 9:30 a.m. to 4:50 p.m. "
+                 "Eastern Time. The agency is holding this meeting to discuss BLA 125842 "
+                 "From Capricor, Inc. for Deramiocel. ADDRESSES: See below.")
+
+
+def test_federal_register_doc_to_events_allow_past():
+    """A past AdCom notice converts to an event with allow_past=True."""
+    import scrapers.federal_register as fr
+
+    events = fr._doc_to_events(_FR_CAPR_DOC, _FR_CAPR_BODY, {"CAPR": ["Capricor Therapeutics"]},
+                               allow_past=True)
+    assert len(events) == 1
+    ev = events[0]
+    assert ev["ticker"] == "CAPR"
+    assert ev["event_type"] == "REGULATORY"
+    assert ev["event_date"] == datetime.datetime(2026, 7, 29)
+    assert ev["external_id"] == "FR-2026-13096"
+    assert ev["impact_level"] == "High"
+    assert ev["verified"] is True
+    assert "FDA Advisory Committee" in ev["title"]
+    assert "Source: Federal Register" in ev["description"]
+
+
+def test_federal_register_doc_to_events_default_drops_past():
+    """Without allow_past the forward pipeline still drops past meetings."""
+    import scrapers.federal_register as fr
+
+    assert fr._doc_to_events(_FR_CAPR_DOC, _FR_CAPR_BODY, {"CAPR": ["Capricor Therapeutics"]}) == []
+
+
 # ── PDUFA scraper dedup (regression: autoflush=False blinded the within-run check) ──
 
 def test_pdufa_one_filing_documents_insert_once(seed_tickers, db, monkeypatch):
