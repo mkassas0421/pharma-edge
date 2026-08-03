@@ -159,6 +159,58 @@ def test_federal_register_doc_to_events_default_drops_past():
     assert fr._doc_to_events(_FR_CAPR_DOC, _FR_CAPR_BODY, {"CAPR": ["Capricor Therapeutics"]}) == []
 
 
+# ── ClinicalTrials.gov event date: results-first-posted wins ─────────────────
+
+def _study_dict(status_mod: dict) -> dict:
+    return {
+        "protocolSection": {
+            "identificationModule": {"nctId": "NCT03569293", "briefTitle": "A Study of Upadacitinib"},
+            "sponsorCollaboratorsModule": {"leadSponsor": {"name": "AbbVie Inc."}},
+            "statusModule": status_mod,
+            "designModule": {"phases": ["PHASE3"]},
+            "conditionsModule": {"conditions": ["Atopic Dermatitis"]},
+            "armsInterventionsModule": {"interventions": [{"name": "Upadacitinib"}]},
+            "descriptionModule": {"briefSummary": "A Phase 3 study."},
+        }
+    }
+
+
+def test_study_to_event_prefers_results_first_posted(seed_tickers, db):
+    """The real catalyst is the data release — results-first-posted wins."""
+    import datetime
+    import scrapers.clinical_trials as ct
+    from app.models.database import Ticker
+
+    from scrapers.company_map import seed_aliases
+    seed_aliases()
+    ticker = db.query(Ticker).filter(Ticker.ticker == "ABBV").first()
+    study = _study_dict({
+        "resultsFirstPostDateStruct": {"date": "2022-02-03", "type": "ACTUAL"},
+        "primaryCompletionDateStruct": {"date": "2021-01-06", "type": "ACTUAL"},
+    })
+    ev = ct._study_to_event(study, "ABBV", ticker.id, min_event_date=datetime.datetime(2020, 1, 1))
+    assert ev is not None
+    assert ev["event_date"] == datetime.datetime(2022, 2, 3)
+    assert "results first posted" in ev["description"]
+    assert "estimated primary completion" not in ev["description"]
+
+
+def test_study_to_event_falls_back_to_completion(seed_tickers, db):
+    """No results posted yet → the (estimated) completion date stays."""
+    import datetime
+    import scrapers.clinical_trials as ct
+    from app.models.database import Ticker
+
+    from scrapers.company_map import seed_aliases
+    seed_aliases()
+    ticker = db.query(Ticker).filter(Ticker.ticker == "ABBV").first()
+    study = _study_dict({"primaryCompletionDateStruct": {"date": "2026-12-01", "type": "ESTIMATED"}})
+    ev = ct._study_to_event(study, "ABBV", ticker.id)
+    assert ev is not None
+    assert ev["event_date"] == datetime.datetime(2026, 12, 1)
+    assert "estimated primary completion" in ev["description"]
+
+
 # ── PDUFA scraper dedup (regression: autoflush=False blinded the within-run check) ──
 
 def test_pdufa_one_filing_documents_insert_once(seed_tickers, db, monkeypatch):

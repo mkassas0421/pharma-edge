@@ -230,7 +230,14 @@ def _study_to_event(study: dict, ticker: str, ticker_id: int,
     event_type, impact = PHASE_MAP.get(phase_str, ("PHASE1_READOUT", "Low"))
 
     # ── Date ──
-    ev_date = _best_date(sm)
+    # The REAL market catalyst is the data release, not the trial completion:
+    # prefer the official "results first posted" date when the study has
+    # posted results, falling back to the completion/start dates otherwise.
+    results_date = None
+    rfp = sm.get("resultsFirstPostDateStruct")
+    if isinstance(rfp, dict):
+        results_date = _parse_date(rfp.get("date"))
+    ev_date = results_date or _best_date(sm)
     if not ev_date:
         return None
 
@@ -245,17 +252,31 @@ def _study_to_event(study: dict, ticker: str, ticker_id: int,
     condition_str = conditions[0] if conditions else "Various"
     trial_phase = phase_str.replace("_", " ").title()
     overall_status = sm.get("overallStatus", "")
-    milestone = (
-        f"{event_type.replace('_', ' ').title()}"
-        f" — estimated primary completion {ev_date.strftime('%b %Y')}"
-    )
-    background = (
-        f"Sponsored by {sponsor_name}. This {trial_phase} trial "
-        f"({nct_id}) is currently {overall_status.replace('_', ' ').lower()} "
-        f"and investigates {drug_name} in {condition_str} patients. "
-        f"Primary completion is estimated for {ev_date.strftime('%B %Y')}. "
-        f"Source: ClinicalTrials.gov."
-    )
+    if results_date:
+        milestone = (
+            f"{event_type.replace('_', ' ').title()}"
+            f" — results first posted {results_date.strftime('%b %Y')}"
+        )
+        background = (
+            f"Sponsored by {sponsor_name}. This {trial_phase} trial "
+            f"({nct_id}) is currently {overall_status.replace('_', ' ').lower()} "
+            f"and investigates {drug_name} in {condition_str} patients. "
+            f"Results were first posted on ClinicalTrials.gov on "
+            f"{results_date.strftime('%B %d, %Y')}. "
+            f"Source: ClinicalTrials.gov."
+        )
+    else:
+        milestone = (
+            f"{event_type.replace('_', ' ').title()}"
+            f" — estimated primary completion {ev_date.strftime('%b %Y')}"
+        )
+        background = (
+            f"Sponsored by {sponsor_name}. This {trial_phase} trial "
+            f"({nct_id}) is currently {overall_status.replace('_', ' ').lower()} "
+            f"and investigates {drug_name} in {condition_str} patients. "
+            f"Primary completion is estimated for {ev_date.strftime('%B %Y')}. "
+            f"Source: ClinicalTrials.gov."
+        )
 
     desc_parts = [
         f"💊 Drug: {drug_name}",
