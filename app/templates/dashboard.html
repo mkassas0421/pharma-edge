@@ -254,6 +254,27 @@
   <!-- MODALS                                                -->
   <!-- ════════════════════════════════════════════════════════ -->
 
+  <!-- ── Ticker Detail Modal ──
+       MUST stay BEFORE #event-detail-modal in the DOM: both are z-[60],
+       so DOM order (later = on top) lets the event modal stack above it. -->
+  <div id="ticker-detail-modal" class="fixed inset-0 z-[60] hidden items-center justify-center bg-black/70 backdrop-blur-sm" onclick="if(event.target===this)closeModal('ticker-detail-modal')">
+    <div class="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-3xl mx-4 max-h-[85vh] overflow-y-auto shadow-2xl">
+      <!-- Header -->
+      <div class="sticky top-0 bg-gray-900 border-b border-gray-800 px-6 py-4 flex items-center justify-between rounded-t-2xl z-10">
+        <div class="flex items-center gap-3 min-w-0">
+          <span id="ticker-modal-badge" class="font-bold font-mono text-lg text-white"></span>
+          <span id="ticker-modal-company" class="text-sm text-gray-400 truncate"></span>
+          <span id="ticker-modal-count" class="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full shrink-0"></span>
+        </div>
+        <button onclick="closeModal('ticker-detail-modal')" class="text-gray-500 hover:text-white transition-colors shrink-0 ml-3" aria-label="Close">
+          <i class="fa-solid fa-xmark text-xl"></i>
+        </button>
+      </div>
+      <!-- Body: JS-rendered — skeleton first, then one section per event type -->
+      <div id="ticker-modal-body" class="px-6 py-5 space-y-6"></div>
+    </div>
+  </div>
+
   <!-- ── Event Detail Modal ── -->
   <div id="event-detail-modal" class="fixed inset-0 z-[60] hidden items-center justify-center bg-black/70 backdrop-blur-sm" onclick="if(event.target===this)closeModal('event-detail-modal')">
     <div class="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-2xl mx-4 max-h-[85vh] overflow-y-auto shadow-2xl">
@@ -604,6 +625,222 @@
       }
     }
 
+    // ── Ticker Detail Modal ──
+    const EVENT_TYPE_ORDER = ['PDUFA', 'PHASE3_READOUT', 'PHASE2_READOUT', 'PHASE1_READOUT', 'REGULATORY'];
+    const GROUP_PAGE_SIZE = 10; // per half (upcoming/past) before "Show all"
+    let tickerDetailState = null; // { ticker, groups, expanded: Set<'TYPE:upcoming'|'TYPE:past'>, statsHtml: {} }
+    let tickerDetailSeq = 0; // stale-response guard for rapid re-opens
+
+    function openTickerDetail(ticker) {
+      const seq = ++tickerDetailSeq;
+      const t = (tickerList || []).find(x => x.ticker === ticker);
+      document.getElementById('ticker-modal-badge').textContent = ticker;
+      document.getElementById('ticker-modal-company').textContent = (t && t.company_name) || ticker;
+      document.getElementById('ticker-modal-count').textContent = '—';
+      document.getElementById('ticker-modal-body').innerHTML =
+        '<div class="skeleton h-16 w-full"></div><div class="skeleton h-24 w-full"></div><div class="skeleton h-24 w-full"></div>';
+      openModal('ticker-detail-modal');
+      loadTickerEvents(ticker).then(events => {
+        if (seq !== tickerDetailSeq) return; // a newer open superseded this one
+        tickerDetailState = { ticker, groups: groupTickerEvents(events), expanded: new Set(), statsHtml: {} };
+        document.getElementById('ticker-modal-count').textContent = `${events.length} event${events.length === 1 ? '' : 's'}`;
+        if (!tickerDetailState.groups.length) {
+          document.getElementById('ticker-modal-body').innerHTML =
+            `<div class="text-center py-10 text-gray-400">No events found for <b class="text-white">${escapeHtml(ticker)}</b>.</div>`;
+          return;
+        }
+        renderTickerGroups();
+        loadTypeStats(ticker, seq);
+      }).catch(() => {
+        if (seq !== tickerDetailSeq) return;
+        document.getElementById('ticker-modal-body').innerHTML = `
+          <div class="text-center py-10 text-rose-400">
+            <i class="fa-solid fa-exclamation-triangle text-2xl"></i>
+            <p class="mt-2">Failed to load events for ${escapeHtml(ticker)}.</p>
+            <button onclick="openTickerDetail('${escapeHtml(ticker)}')" class="mt-3 text-emerald-400 hover:text-emerald-300 text-sm">Retry</button>
+          </div>`;
+      });
+    }
+
+    async function loadTickerEvents(ticker) {
+      const resp = await fetch(`/api/events?ticker=${encodeURIComponent(ticker)}&upcoming_only=false`);
+      if (!resp.ok) throw new Error('fetch failed');
+      return resp.json(); // EventResponse[]: id, ticker, title, event_type, event_date, impact_level, description, source_url, verified
+    }
+
+    function groupTickerEvents(events) {
+      const now = Date.now();
+      const buckets = new Map();
+      for (const ev of events) {
+        const type = ev.event_type;
+        if (!buckets.has(type)) buckets.set(type, { type, upcoming: [], past: [] });
+        const half = new Date(ev.event_date).getTime() >= now ? 'upcoming' : 'past';
+        buckets.get(type)[half].push(ev);
+      }
+      // Known types in EVENT_TYPE_ORDER; unknown types appended alphabetically after them.
+      const groups = [];
+      for (const type of EVENT_TYPE_ORDER) if (buckets.has(type)) groups.push(buckets.get(type));
+      groups.push(...[...buckets.keys()].filter(t => !EVENT_TYPE_ORDER.includes(t)).sort().map(t => buckets.get(t)));
+      for (const g of groups) {
+        g.upcoming.sort((a, b) => new Date(a.event_date) - new Date(b.event_date));
+        g.past.sort((a, b) => new Date(b.event_date) - new Date(a.event_date));
+      }
+      return groups; // [{ type, upcoming: EventResponse[], past: EventResponse[] }]
+    }
+
+    function renderTickerGroups() {
+      const body = document.getElementById('ticker-modal-body');
+      const { groups } = tickerDetailState;
+      body.innerHTML = groups.map((g, i) => {
+        const total = g.upcoming.length + g.past.length;
+        // Stats box: restore already-loaded HTML on re-render, else skeleton (fetches fill it in),
+        // else a static message when the type has no past events (nothing could be captured yet).
+        let statsHtml;
+        if (!g.past.length) {
+          statsHtml = '<span class="text-gray-500">No reaction history yet — data appears ~10 days after events mature.</span>';
+        } else if (tickerDetailState.statsHtml[i] !== undefined) {
+          statsHtml = tickerDetailState.statsHtml[i];
+        } else {
+          statsHtml = '<div class="skeleton h-14 w-full"></div>';
+        }
+        const halfHtml = (half, items) => {
+          const key = `${g.type}:${half}`;
+          const expanded = tickerDetailState.expanded.has(key);
+          const shown = expanded ? items : items.slice(0, GROUP_PAGE_SIZE);
+          const rows = shown.map((ev, idx) => {
+            const hasDesc = !!ev.description;
+            return `
+              <button onclick="openGroupEvent(${i}, '${half}', ${idx})"
+                      class="w-full text-left flex items-center gap-2 py-2 border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors ${hasDesc ? '' : 'opacity-50 cursor-default'}"
+                      ${hasDesc ? '' : 'disabled'}>
+                <span class="flex-1 min-w-0">
+                  <span class="block text-sm text-gray-200 truncate">${escapeHtml(ev.title)}</span>
+                  <span class="block text-xs text-gray-500 truncate mt-0.5">${escapeHtml(excerpt(ev.description))}</span>
+                </span>
+                ${impactBadge(ev.impact_level)}
+                <span class="text-xs text-gray-400 whitespace-nowrap shrink-0 ml-2">${formatDate(ev.event_date)}</span>
+              </button>`;
+          });
+          if (!expanded && items.length > GROUP_PAGE_SIZE) {
+            rows.push(`<button onclick="toggleTypeExpansion(${i}, '${half}')"
+                    class="text-xs text-emerald-400 hover:text-emerald-300 py-1.5">Show all ${items.length - GROUP_PAGE_SIZE} more</button>`);
+          }
+          return rows.join('');
+        };
+        return `
+          <section>
+            <div class="flex items-center gap-2 mb-2">
+              ${eventTypeBadge(g.type)}
+              <span class="text-xs text-gray-500">Total: ${total}</span>
+            </div>
+            <div id="ticker-stats-${i}" class="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4 mb-2">${statsHtml}</div>
+            ${g.upcoming.length ? `<div class="text-xs text-gray-500 uppercase tracking-wider mb-1 mt-3">Upcoming</div>${halfHtml('upcoming', g.upcoming)}` : ''}
+            ${g.past.length ? `<div class="text-xs text-gray-500 uppercase tracking-wider mb-1 mt-3">Past</div>${halfHtml('past', g.past)}` : ''}
+          </section>`;
+      }).join('');
+    }
+
+    function openGroupEvent(groupIdx, half, idx) {
+      const ev = tickerDetailState.groups[groupIdx][half][idx];
+      if (!ev || !ev.description) return; // mirrors openEventDetail's guard (disabled buttons don't fire anyway)
+      openEventDetail(eventToRow(ev));
+    }
+
+    function toggleTypeExpansion(groupIdx, half) {
+      const g = tickerDetailState.groups[groupIdx];
+      const key = `${g.type}:${half}`;
+      if (tickerDetailState.expanded.has(key)) tickerDetailState.expanded.delete(key);
+      else tickerDetailState.expanded.add(key);
+      renderTickerGroups();
+    }
+
+    // Adapter: EventResponse → the dashboard-row shape openEventDetail consumes.
+    function eventToRow(ev) {
+      const t = (tickerList || []).find(x => x.ticker === ev.ticker);
+      const ms = new Date(ev.event_date).getTime() - Date.now();
+      return {
+        ticker: ev.ticker,
+        company_name: (t && t.company_name) || ev.ticker,
+        next_event_id: ev.id,
+        next_event_title: ev.title,
+        next_event_type: ev.event_type,
+        next_event_date: ev.event_date,
+        impact_level: ev.impact_level,
+        days_until_event: Math.trunc(ms / 86400000),
+        next_event_description: ev.description || '',
+      };
+    }
+
+    function excerpt(text) {
+      if (!text) return '';
+      const flat = text.replace(/\s+/g, ' ').trim();
+      return flat.length > 160 ? flat.slice(0, 160) + '…' : flat;
+    }
+
+    async function loadTypeStats(ticker, seq) {
+      // Only types with at least one PAST event get a fetch — reactions are only
+      // ever captured for matured (past) events.
+      const groups = tickerDetailState.groups;
+      await Promise.all(groups.map(async (g, i) => {
+        if (!g.past.length) return;
+        const el = document.getElementById(`ticker-stats-${i}`);
+        if (!el) return;
+        el.innerHTML = '<div class="skeleton h-14 w-full"></div>';
+        try {
+          const resp = await fetch(`/api/reactions/stats?ticker=${encodeURIComponent(ticker)}&event_type=${encodeURIComponent(g.type)}`);
+          if (!resp.ok) throw new Error('fetch failed');
+          const s = await resp.json();
+          if (seq !== tickerDetailSeq) return;
+          const html = renderTypeStats(s, ticker, g.type);
+          tickerDetailState.statsHtml[i] = html;
+          el.innerHTML = html;
+        } catch (err) {
+          if (seq !== tickerDetailSeq) return;
+          tickerDetailState.statsHtml[i] = '<span class="text-gray-500">Reaction history unavailable.</span>';
+          el.innerHTML = tickerDetailState.statsHtml[i];
+        }
+      }));
+    }
+
+    // Same presentation style as loadEventReaction, but the cohort is the plain
+    // ticker+type filter — /api/reactions/stats never sets sample_source.
+    function renderTypeStats(s, ticker, type) {
+      const typeLabel = eventTypePlural(type);
+      const safeTicker = escapeHtml(ticker);
+      if (!s || !s.n) {
+        return '<span class="text-gray-500">No reaction history yet — data appears ~10 days after events mature.</span>';
+      }
+      const sample = s.low_sample_warning
+        ? ' <span class="text-xs text-amber-400 border border-amber-500/30 rounded-full px-2 py-0.5" title="Fewer than 5 similar events">small sample</span>'
+        : '';
+      let html = `<div class="text-sm text-gray-300">Across <b>${s.n}</b> prior ${typeLabel || 'catalysts'} for <b>${safeTicker}</b>${sample},`;
+      const mean = reactionPct(s.mean_1d_pct);
+      if (mean !== null) {
+        const cls = mean >= 0 ? 'text-emerald-400' : 'text-rose-400';
+        html += ` the stock moved <b class="${cls}">${mean >= 0 ? '+' : ''}${mean.toFixed(1)}%</b> on average the next day.`;
+      } else {
+        html += ' no next-day price data has been captured yet.';
+      }
+      html += '</div>';
+
+      const chips = [];
+      const median = reactionPct(s.median_1d_pct);
+      if (median !== null) chips.push(`typical move <b>${median >= 0 ? '+' : ''}${median.toFixed(1)}%</b>`);
+      if (s.positive_rate_1d !== null && s.positive_rate_1d !== undefined) {
+        chips.push(`<b>${Math.round(s.positive_rate_1d * 100)}%</b> followed by gains`);
+      }
+      const lo = reactionPct(s.min_1d_pct), hi = reactionPct(s.max_1d_pct);
+      if (lo !== null && hi !== null) {
+        chips.push(`<span class="bg-gray-800 rounded-full px-2 py-0.5">range <b class="text-gray-100">${lo >= 0 ? '+' : ''}${lo.toFixed(1)}%</b> to <b class="text-gray-100">${hi >= 0 ? '+' : ''}${hi.toFixed(1)}%</b></span>`);
+      }
+      const mean5d = reactionPct(s.mean_5d_pct);
+      if (mean5d !== null) chips.push(`5 days later <b>${mean5d >= 0 ? '+' : ''}${mean5d.toFixed(1)}%</b>`);
+      if (chips.length) {
+        html += `<div class="flex items-center gap-2 flex-wrap mt-2 text-xs text-gray-400">${chips.map((c, j) => `${j > 0 ? '<span class="text-gray-700">·</span>' : ''}${c}`).join('')}</div>`;
+      }
+      return html;
+    }
+
     // ── Render Table ──
     function renderTable() {
       const tbody = document.getElementById('dashboard-body');
@@ -651,7 +888,9 @@
           <tr class="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors ${isAlert ? 'bg-rose-900/10' : ''}">
             <td class="px-5 py-4">
               <div class="flex items-center gap-2">
-                <span class="font-bold text-white font-mono">${safeTicker}</span>
+                <button onclick="openTickerDetail('${safeTicker}')"
+                        class="font-bold font-mono text-white hover:text-emerald-400 transition-colors"
+                        title="All events & reaction history">${safeTicker}</button>
                 ${isAlert ? '<i class="fa-solid fa-bell text-rose-400 text-xs animate-pulse-slow" title="Alerting"></i>' : ''}
               </div>
             </td>
@@ -722,7 +961,9 @@
                   </div>
                   <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2 mb-1">
-                      <span class="font-bold font-mono text-white text-sm">${safeTicker}</span>
+                      <span onclick="event.stopPropagation(); openTickerDetail('${safeTicker}')"
+                            class="font-bold font-mono text-white text-sm cursor-pointer hover:text-emerald-400 transition-colors"
+                            title="All events & reaction history">${safeTicker}</span>
                       ${eventTypeBadge(ev.next_event_type)}
                       ${impactBadge(ev.impact_level)}
                     </div>
