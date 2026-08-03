@@ -885,12 +885,11 @@
         const safeCompany = escapeHtml(row.company_name);
         const safeTitle = escapeHtml(row.next_event_title || '');
         return `
-          <tr class="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors ${isAlert ? 'bg-rose-900/10' : ''}">
+          <tr onclick="openTickerDetail('${safeTicker}')"
+              class="border-b border-gray-800/50 hover:bg-gray-800/30 cursor-pointer transition-colors ${isAlert ? 'bg-rose-900/10' : ''}">
             <td class="px-5 py-4">
               <div class="flex items-center gap-2">
-                <button onclick="openTickerDetail('${safeTicker}')"
-                        class="font-bold font-mono text-white hover:text-emerald-400 transition-colors"
-                        title="All events & reaction history">${safeTicker}</button>
+                <span class="font-bold font-mono text-white">${safeTicker}</span>
                 ${isAlert ? '<i class="fa-solid fa-bell text-rose-400 text-xs animate-pulse-slow" title="Alerting"></i>' : ''}
               </div>
             </td>
@@ -900,7 +899,7 @@
             <td class="px-5 py-4">
               <div class="flex items-center gap-2">
                 ${eventTypeBadge(row.next_event_type)}
-                <button onclick="openEventDetail(dashboardData.find(r=>r.ticker==='${safeTicker}'))"
+                <button onclick="event.stopPropagation(); openEventDetail(dashboardData.find(r=>r.ticker==='${safeTicker}'))"
                         class="text-gray-200 truncate max-w-[220px] block text-left hover:text-emerald-400 transition-colors"
                         ${!row.next_event_description ? 'disabled' : ''}>
                   ${safeTitle || '—'}
