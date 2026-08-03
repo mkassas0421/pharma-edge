@@ -327,6 +327,7 @@ def run_pipeline():
                     total_upd += 1
                 else:
                     db.add(CatalystEvent(**ev_data))
+                    db.flush()  # autoflush=False: make this row visible to the session's own dedup checks
                     total_new += 1
 
         if total_new or total_upd:

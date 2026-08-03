@@ -127,6 +127,7 @@ def _process_filing(ticker: str, tid: int, cik: str, adsh: str, db, now) -> tupl
                 source_url=f"{SEC_ARCHIVE}/{cik.lstrip('0')}/{adsh.replace('-', '')}/",
                 verified=True,
             ))
+            db.flush()  # autoflush=False: make this row visible to the session's own dedup checks
             return 1, 0
     return 0, 0
 

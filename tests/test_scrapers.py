@@ -114,3 +114,41 @@ def test_news_feed_disabled_without_webhook(seed_tickers, db, monkeypatch):
     monkeypatch.setattr(news.settings, "discord_webhook_news", "")
     # Must return early without touching anything (no error)
     assert news.run_news_feed() is None
+
+
+# ── PDUFA scraper dedup (regression: autoflush=False blinded the within-run check) ──
+
+def test_pdufa_one_filing_documents_insert_once(seed_tickers, db, monkeypatch):
+    """One 8-K with several documents announcing the same date → ONE event."""
+    import datetime
+    import scrapers.pdufa as pdufa
+    from app.models.database import CatalystEvent
+
+    now = datetime.datetime.utcnow()
+    target = now + datetime.timedelta(days=21)  # inside the 30-day window
+
+    # Two documents in one filing, both carrying the same PDUFA date
+    docs = [
+        {"name": "pdufa_ex99.htm", "url": "https://example.com/ex99"},
+        {"name": "pdufa_8k.htm", "url": "https://example.com/main"},
+    ]
+    monkeypatch.setattr(pdufa, "_get_filing_files", lambda cik, adsh: docs)
+    monkeypatch.setattr(pdufa, "_check_pdufa", lambda url: {"date": target, "drug": "Deramiocel"})
+
+    ticker = db.query(Ticker).first()
+    n1, u1 = pdufa._process_filing(ticker.ticker, ticker.id, "0000320193",
+                                   "0000320193-26-000001", db, now)
+    assert (n1, u1) == (1, 0)
+    count = (db.query(CatalystEvent)
+             .filter(CatalystEvent.ticker == ticker.ticker, CatalystEvent.event_type == "PDUFA")
+             .count())
+    assert count == 1  # second document must NOT insert again
+
+    # A second filing for the same date updates the existing row, never inserts
+    n2, u2 = pdufa._process_filing(ticker.ticker, ticker.id, "0000320193",
+                                   "0000320193-26-000002", db, now)
+    assert (n2, u2) == (0, 0)  # same date + same title → no change
+    count = (db.query(CatalystEvent)
+             .filter(CatalystEvent.ticker == ticker.ticker, CatalystEvent.event_type == "PDUFA")
+             .count())
+    assert count == 1
