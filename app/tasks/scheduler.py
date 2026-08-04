@@ -177,43 +177,37 @@ def check_alerts():
 # ── Expired event cleanup ────────────────────────────────────────────────
 
 def prune_expired_events():
-    """Delete old catalyst events — but only once their reaction is settled.
+    """Delete dead-weight catalyst events — everything with a reaction stays.
 
-    Events are scraped with their official source links and only make sense
-    while upcoming; keeping past ones forever grows the DB for no value.
-    A past event is deletable once its EventReaction row is final (captured
-    or failed) — the reaction carries the data forward (denormalised fields).
-    Events older than a year without any reaction are dead weight too.
-    This guard matters for the historical backfill: events years old must
-    not vanish before their reaction has been captured.
-    Runs daily; old events never re-alert (alert_sent is set on send).
+    Every event that ever received an EventReaction row (pending, failed or
+    captured) is kept forever: the historical backfill and the per-ticker
+    reaction history ARE the product, and the denormalised reaction row
+    exists so stats survive even though the event row itself is the record.
+    Only events older than a year that never got a reaction (import
+    artefacts yfinance could not price, or events the capture job never
+    reached) are dead weight and get deleted. Runs daily; old events never
+    re-alert (alert_sent is set on send).
     """
-    PRUNE_AFTER_DAYS = 90
     ANCIENT_AFTER_DAYS = 365
-    cutoff = datetime.datetime.utcnow() - datetime.timedelta(days=PRUNE_AFTER_DAYS)
     ancient_cutoff = datetime.datetime.utcnow() - datetime.timedelta(days=ANCIENT_AFTER_DAYS)
 
     db = SessionLocal()
     try:
         reacted_ids = (
             db.query(EventReaction.event_id)
-            .filter(EventReaction.status.in_(["captured", "failed"]))
             .subquery()
         )
         deleted = (
             db.query(CatalystEvent)
-            .filter(CatalystEvent.event_date < cutoff)
-            .filter(
-                CatalystEvent.id.in_(reacted_ids)
-                | (CatalystEvent.event_date < ancient_cutoff)
-            )
+            .filter(CatalystEvent.event_date < ancient_cutoff)
+            .filter(~CatalystEvent.id.in_(reacted_ids))
             .delete(synchronize_session="fetch")
         )
         db.commit()
         if deleted:
             dashboard_cache.invalidate_all()
             stats_cache.invalidate_all()
-            logger.info("Pruned %d expired event(s) (older than %d days)", deleted, PRUNE_AFTER_DAYS)
+            logger.info("Pruned %d dead-weight event(s) (older than %d days, no reaction)", deleted, ANCIENT_AFTER_DAYS)
     except Exception as exc:
         logger.error("Event pruning failed: %s", exc)
         db.rollback()

@@ -1,9 +1,12 @@
 """Backfill historical catalyst events from ClinicalTrials.gov (one-time).
 
 The forward-looking scraper discards studies whose completion date is more
-than 90 days in the past. This script goes further back (2020-01-01 →
-2026-03-31) so the reaction tracker has per-ticker history to aggregate —
-"how did THIS stock react to the same kind of catalyst before?"
+than 90 days in the past. This script goes further back (completion window
+2020-01-01 → 2026-03-31) so the reaction tracker has per-ticker history to
+aggregate — "how did THIS stock react to the same kind of catalyst before?"
+Event dates follow the results-first-posted rule (see _study_to_event): the
+real catalyst is the data release, so imported events are dated by
+resultsFirstPostDateStruct where one exists.
 
 It reuses the scraper's study→event conversion and the reaction service's
 capture logic: every imported event gets its price reaction recorded
@@ -43,7 +46,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger("backfill")
 
 BACKFILL_START = datetime.datetime(2020, 1, 1)
-BACKFILL_END = datetime.datetime(2026, 3, 31)  # stops before the forward window
+BACKFILL_END = datetime.datetime(2026, 3, 31)  # completion-window bound for the API query
 MAX_PAGES_PER_TERM = 3      # 100 studies per page
 MAX_EVENTS_PER_TICKER = 150
 API_SLEEP = 1.0             # ClinicalTrials.gov polite rate limit
@@ -116,7 +119,9 @@ def _backfill_ticker(db, ticker_obj, stats: dict) -> int:
         ev_data = _study_to_event(
             study, ticker_obj.ticker, ticker_obj.id, min_event_date=BACKFILL_START
         )
-        if not ev_data or ev_data["event_date"] > BACKFILL_END:
+        # Results-first-posted dates may land after the completion window —
+        # anything still in the future belongs to the forward pipeline.
+        if not ev_data or ev_data["event_date"] > datetime.datetime.utcnow():
             continue
         existing = (
             db.query(CatalystEvent)
